@@ -14,13 +14,14 @@ import {
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, testConnection } from '../firebase/config';
 import { Employee } from '../types';
+import { saveRecentAccount } from '../utils/recentAccounts';
 
 interface AuthContextType {
   user: User | null;
   employee: Employee | null;
   isAdmin: boolean;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (loginHint?: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   updateEmployeeProfile: (data: Partial<Employee>) => Promise<void>;
   refreshEmployee: () => Promise<void>;
@@ -68,11 +69,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const data = empSnap.data() as Employee;
         const userIsAdmin = isDefaultAdmin || data.role === 'admin';
         setIsAdmin(userIsAdmin);
-        setEmployee({
+        const resolvedEmp: Employee = {
           ...data,
           id: firebaseUser.uid,
           uid: firebaseUser.uid,
           role: userIsAdmin ? 'admin' : data.role,
+        };
+        setEmployee(resolvedEmp);
+
+        // Save account to recent accounts for fast login
+        saveRecentAccount({
+          uid: firebaseUser.uid,
+          name: resolvedEmp.name || firebaseUser.displayName || 'Karyawan',
+          email: resolvedEmp.email || firebaseUser.email || '',
+          photoUrl: resolvedEmp.facePhotoUrl || firebaseUser.photoURL || '',
+          department: resolvedEmp.department || '',
+          role: resolvedEmp.role,
+          lastLogin: new Date().toISOString(),
         });
       } else {
         // Auto-provision initial employee record for the logged-in user
@@ -102,6 +115,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await setDoc(empRef, cleanEmployeePayload);
         setEmployee(newEmployee);
         setIsAdmin(isDefaultAdmin);
+
+        // Save account to recent accounts for fast login
+        saveRecentAccount({
+          uid: firebaseUser.uid,
+          name: newEmployee.name,
+          email: newEmployee.email,
+          photoUrl: newEmployee.facePhotoUrl,
+          department: newEmployee.department,
+          role: newEmployee.role,
+          lastLogin: new Date().toISOString(),
+        });
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.GET, `employees/${firebaseUser.uid}`);
@@ -123,10 +147,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (loginHint?: string) => {
     try {
       const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
+      if (loginHint) {
+        provider.setCustomParameters({ login_hint: loginHint });
+      } else {
+        provider.setCustomParameters({ prompt: 'select_account' });
+      }
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error('Google Sign-in failed:', error);
