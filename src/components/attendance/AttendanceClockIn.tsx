@@ -456,7 +456,7 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
         {/* Left Column: Camera View & Face Recognition Engine */}
         <div className="lg:col-span-7 bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
                 <Camera className="w-4 h-4" />
@@ -466,53 +466,7 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
                 <p className="text-xs text-slate-500 truncate">Kamera real-time pendeteksi wajah</p>
               </div>
             </div>
-
-            {/* Face Registered indicator or action button */}
-            {employee?.faceRegistered ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Biometrik Terdaftar</span>
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  stopCamera();
-                  onOpenFaceRegistration();
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white shadow-md shadow-amber-500/20 transition-all shrink-0 cursor-pointer touch-manipulation z-20"
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>Daftar Wajah Sekarang</span>
-              </button>
-            )}
           </div>
-
-          {/* Prominent mobile alert if face is not yet registered */}
-          {!employee?.faceRegistered && (
-            <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                  <UserCheck className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-amber-900 block">Wajah Belum Terdaftar</span>
-                  <span className="text-[11px] text-amber-700 block">Daftarkan biometrik wajah Anda untuk verifikasi presensi</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  stopCamera();
-                  onOpenFaceRegistration();
-                }}
-                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer touch-manipulation"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Daftar Wajah Sekarang</span>
-              </button>
-            </div>
-          )}
 
           {/* Camera Frame */}
           <div className="relative aspect-4/3 rounded-2xl overflow-hidden bg-slate-950 border-2 border-slate-800 shadow-inner flex items-center justify-center">
