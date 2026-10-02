@@ -87,12 +87,12 @@ function MainApp() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/30">
-          <ShieldCheck className="w-7 h-7" />
+        <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center mb-4 shadow-xl overflow-hidden p-1">
+          <img src="/logo-metara.png" alt="Metara" className="w-full h-full object-contain" />
         </div>
         <div className="flex items-center gap-2 text-slate-300 font-medium text-sm">
-          <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
-          <span>Memuat PresensiSmart...</span>
+          <RefreshCw className="w-4 h-4 animate-spin text-red-500" />
+          <span>Memuat HRIS metaranews.co...</span>
         </div>
       </div>
     );
@@ -147,9 +147,9 @@ function MainApp() {
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 font-medium text-slate-600">
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
-            <span>PresensiSmart • Sistem Absensi GPS & Biometrik Wajah</span>
+          <div className="flex items-center gap-2 font-medium text-slate-700">
+            <img src="/logo-metara.png" alt="Metara" className="w-5 h-5 object-contain" />
+            <span>HRIS metaranews.co • Sistem Absensi GPS & Biometrik Wajah</span>
           </div>
           <div>Real-time Synchronized via Google Cloud Firebase Firestore</div>
         </div>

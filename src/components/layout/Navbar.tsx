@@ -59,20 +59,29 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo & Brand */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-              <ShieldCheck className="w-6 h-6" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white flex items-center justify-center shadow-xs border border-slate-200 overflow-hidden shrink-0">
+              <img
+                src="/logo-metara.png"
+                alt="Metara Logo"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  target.onerror = null;
+                  target.src = '/src/assets/images/metara_circular_badge_1790953093074.jpg';
+                }}
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900">
-                  Presensi<span className="text-blue-600">Smart</span>
+                  HRIS <span className="text-red-600">metaranews.co</span>
                 </span>
-                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                  GPS & Face AI
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                  Presensi & Biometrik
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">
-                Verifikasi Kehadiran Biometrik Real-time
+                Sistem Kehadiran GPS & Pengenalan Wajah
               </p>
             </div>
           </div>
