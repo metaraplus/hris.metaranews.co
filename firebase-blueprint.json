@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Data profil karyawan dan data biometrik wajah terdaftar",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "employeeNumber": { "type": "string", "description": "Nomor Induk Pegawai", "maxLength": 50 },
+        "name": { "type": "string", "description": "Nama Lengkap Karyawan", "maxLength": 100 },
+        "email": { "type": "string", "description": "Email Karyawan", "maxLength": 150 },
+        "department": { "type": "string", "description": "Departemen atau Divisi", "maxLength": 100 },
+        "position": { "type": "string", "description": "Jabatan Karyawan", "maxLength": 100 },
+        "phone": { "type": "string", "description": "Nomor Telepon atau WhatsApp", "maxLength": 30 },
+        "role": { "type": "string", "description": "Peran pengguna (admin atau employee)", "enum": ["admin", "employee"] },
+        "faceRegistered": { "type": "boolean", "description": "Apakah foto wajah biometrik sudah didaftarkan" },
+        "facePhotoUrl": { "type": "string", "description": "Foto referensi wajah untuk verifikasi" },
+        "createdAt": { "type": "string", "description": "Waktu pendaftaran" },
+        "updatedAt": { "type": "string", "description": "Waktu pembaruan" }
+      },
+      "required": ["uid", "employeeNumber", "name", "email", "department", "position", "role"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Catatan absensi kehadiran harian karyawan",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string", "description": "ID dokumen karyawan", "maxLength": 128 },
+        "userId": { "type": "string", "description": "Auth UID karyawan", "maxLength": 128 },
+        "employeeName": { "type": "string", "description": "Nama karyawan", "maxLength": 100 },
+        "employeeNumber": { "type": "string", "description": "Nomor Induk Pegawai", "maxLength": 50 },
+        "department": { "type": "string", "description": "Departemen karyawan", "maxLength": 100 },
+        "date": { "type": "string", "description": "Tanggal absensi format YYYY-MM-DD", "maxLength": 20 },
+        "checkInTime": { "type": "string", "description": "Jam masuk", "maxLength": 20 },
+        "checkInLocation": { "type": "object", "description": "Data koordinat GPS dan verifikasi radius masuk" },
+        "checkInPhoto": { "type": "string", "description": "Foto selfie saat clock-in" },
+        "checkInFaceMatchScore": { "type": "number", "description": "Skor kecocokan wajah pengenalan biometrik" },
+        "checkInStatus": { "type": "string", "description": "Status ketepatan waktu masuk", "enum": ["on_time", "late", "out_of_range"] },
+        "checkOutTime": { "type": "string", "description": "Jam pulang", "maxLength": 20 },
+        "checkOutLocation": { "type": "object", "description": "Data koordinat GPS saat keluar" },
+        "checkOutPhoto": { "type": "string", "description": "Foto selfie saat clock-out" },
+        "checkOutFaceMatchScore": { "type": "number", "description": "Skor kecocokan wajah saat pulang" },
+        "workHours": { "type": "number", "description": "Total jam kerja yang dihitung" },
+        "status": { "type": "string", "description": "Status kehadiran harian", "enum": ["present", "late", "half_day", "absent"] },
+        "notes": { "type": "string", "description": "Catatan opsional kehadiran", "maxLength": 500 },
+        "createdAt": { "type": "string", "description": "Waktu pembuatan data absensi" },
+        "updatedAt": { "type": "string", "description": "Waktu pembaruan absensi" }
+      },
+      "required": ["employeeId", "userId", "employeeName", "date", "status"]
+    },
+    "OfficeSetting": {
+      "title": "OfficeSetting",
+      "description": "Konfigurasi koordinat kantor dan geofence radius toleransi presensi",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Nama lokasi kantor", "maxLength": 100 },
+        "latitude": { "type": "number", "description": "Latitude GPS kantor" },
+        "longitude": { "type": "number", "description": "Longitude GPS kantor" },
+        "radiusMeters": { "type": "number", "description": "Radius batas absensi dalam meter" },
+        "workStartTime": { "type": "string", "description": "Jam masuk kantor format HH:mm", "maxLength": 10 },
+        "workEndTime": { "type": "string", "description": "Jam pulang kantor format HH:mm", "maxLength": 10 },
+        "lateToleranceMinutes": { "type": "number", "description": "Toleransi keterlambatan dalam menit" },
+        "updatedAt": { "type": "string", "description": "Waktu pembaruan konfigurasi" },
+        "updatedBy": { "type": "string", "description": "UID admin yang memperbarui", "maxLength": 128 }
+      },
+      "required": ["name", "latitude", "longitude", "radiusMeters", "workStartTime", "workEndTime"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Daftar UID administrator yang memiliki akses hak istimewa HR",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Auth UID", "maxLength": 128 },
+        "email": { "type": "string", "description": "Email administrator", "maxLength": 150 },
+        "role": { "type": "string", "description": "Peran admin", "enum": ["admin", "superadmin"] },
+        "createdAt": { "type": "string", "description": "Waktu ditambahkan" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Koleksi data karyawan dan profil biometrik"
+    },
+    "/attendances/{attendanceId}": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Koleksi riwayat absensi harian karyawan"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/OfficeSetting" },
+      "description": "Koleksi pengaturan kantor dan geofencing GPS"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/Admin" },
+      "description": "Koleksi otorisasi administrator HR"
+    }
+  }
+}

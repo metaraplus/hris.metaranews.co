@@ -1,0 +1,11 @@
+{
+  "name": "Presensi Karyawan GPS & Face Recognition",
+  "description": "Aplikasi presensi absensi karyawan berbasis verifikasi lokasi GPS dan pengenalan wajah real-time dengan dashboard rekapitulasi dan ekspor Excel.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
