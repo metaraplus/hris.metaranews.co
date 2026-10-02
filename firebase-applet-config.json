@@ -1,12 +1,12 @@
 {
-  "projectId": "radiant-cedar-9fjbn",
-  "appId": "1:1071337621535:web:4f08c76ea96d2c24aead2a",
-  "apiKey": "AIzaSyBgeG7fd_L_goQcWoWkVU5kFV65GXERj3c",
-  "authDomain": "radiant-cedar-9fjbn.firebaseapp.com",
+  "projectId": "hrismetaranews",
+  "appId": "1:708158653943:web:170cd616d5c658fa029af2",
+  "apiKey": "AIzaSyB13pJ1WgB90TOWs9Yf3d_hjlkDm8-Y0ho",
+  "authDomain": "hrismetaranews.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-presensikaryawan-ba47a524-b2f6-456f-8461-75bbaf53a36b",
-  "storageBucket": "radiant-cedar-9fjbn.firebasestorage.app",
-  "messagingSenderId": "1071337621535",
+  "storageBucket": "hrismetaranews.firebasestorage.app",
+  "messagingSenderId": "708158653943",
   "measurementId": "",
-  "oAuthClientId": "1071337621535-l4kdop3luvu6ok9kjo7b6uhnh8trr7gn.apps.googleusercontent.com",
+  "oAuthClientId": "708158653943-055s2sem4cutcboso9a9gp9fbnm317bg.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
