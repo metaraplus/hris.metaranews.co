@@ -16,11 +16,11 @@ import { FaceRegistrationModal } from './components/attendance/FaceRegistrationM
 import { OfficeSetting, Employee } from './types';
 import { DEFAULT_OFFICE_SETTING } from './utils/geolocation';
 import { db, handleFirestoreError, OperationType } from './firebase/config';
-import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { RefreshCw, ShieldCheck } from 'lucide-react';
 
 function MainApp() {
-  const { user, employee, isAdmin, loading, refreshEmployee } = useAuth();
+  const { user, employee, isAdmin, loading, refreshEmployee, updateEmployeeProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<'clock' | 'dashboard' | 'history' | 'employees' | 'settings'>('clock');
   const [officeSetting, setOfficeSetting] = useState<OfficeSetting>(DEFAULT_OFFICE_SETTING);
 
@@ -87,15 +87,48 @@ function MainApp() {
     if (!targetFaceEmployee) return;
     try {
       const empRef = doc(db, 'employees', targetFaceEmployee.id);
-      await setDoc(empRef, {
+      const empSnap = await getDoc(empRef);
+      const existingData = empSnap.exists() ? empSnap.data() : {};
+
+      const completeData = {
+        uid: targetFaceEmployee.uid || targetFaceEmployee.id,
+        employeeNumber: existingData.employeeNumber || targetFaceEmployee.employeeNumber || `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
+        name: existingData.name || targetFaceEmployee.name || user?.displayName || 'Karyawan',
+        email: existingData.email || targetFaceEmployee.email || user?.email || '',
+        department: existingData.department || targetFaceEmployee.department || (isAdmin ? 'Manajemen & HR' : 'Operasional'),
+        position: existingData.position || targetFaceEmployee.position || (isAdmin ? 'HR / Super Admin' : 'Staff Karyawan'),
+        phone: existingData.phone || targetFaceEmployee.phone || '',
+        role: existingData.role || targetFaceEmployee.role || (isAdmin ? 'admin' : 'employee'),
         faceRegistered: true,
         facePhotoUrl: photoUrl,
         faceDescriptor: descriptorJson,
+        createdAt: existingData.createdAt || targetFaceEmployee.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      };
+
+      const cleanPayload: any = {};
+      for (const [k, v] of Object.entries(completeData)) {
+        if (v !== undefined) {
+          cleanPayload[k] = v;
+        }
+      }
+
+      await setDoc(empRef, cleanPayload, { merge: true });
+
+      // If updating current user's profile, update local React state immediately
+      if (user && targetFaceEmployee.id === user.uid) {
+        await updateEmployeeProfile({
+          faceRegistered: true,
+          facePhotoUrl: photoUrl,
+          faceDescriptor: descriptorJson,
+        });
+      }
+
       await refreshEmployee();
     } catch (err) {
+      console.error('Save face profile error:', err);
       handleFirestoreError(err, OperationType.UPDATE, `employees/${targetFaceEmployee.id}`);
+      throw err;
     }
   };
 

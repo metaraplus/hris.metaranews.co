@@ -40,6 +40,8 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
   const [faceDetected, setFaceDetected] = useState(false);
   const [detectionMessage, setDetectionMessage] = useState('Mengaktifkan kamera biometrik...');
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
   // Start Camera with iOS Safari & Android support
@@ -100,6 +102,8 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
     if (isOpen) {
       setCapturedPhoto(null);
       setCapturedDescriptor([]);
+      setSaveSuccess(false);
+      setSaveError(null);
       startCamera();
     } else {
       stopCamera();
@@ -195,11 +199,19 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
   const handleConfirmSave = async () => {
     if (!capturedPhoto) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await onSaveFace(capturedPhoto, JSON.stringify(capturedDescriptor));
-      onClose();
-    } catch (err) {
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveSuccess(false);
+        onClose();
+      }, 1200);
+    } catch (err: any) {
       console.error('Save face failed:', err);
+      setSaveError(
+        err.message || 'Gagal menyimpan data biometrik ke database. Pastikan koneksi internet stabil.'
+      );
     } finally {
       setSaving(false);
     }
@@ -290,12 +302,26 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
                 Foto ini akan disimpan sebagai template biometric referensi untuk verifikasi presensi harian secara aman.
               </p>
 
-              <div className="flex items-center gap-3 mt-6 w-full">
+              {saveError && (
+                <div className="w-full mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs text-center flex items-center justify-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                  <span>{saveError}</span>
+                </div>
+              )}
+
+              {saveSuccess && (
+                <div className="w-full mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs text-center font-bold flex items-center justify-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>Profil Wajah Berhasil Disimpan ke Database!</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 mt-5 w-full">
                 <button
                   type="button"
                   onClick={handleRetake}
-                  disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 text-xs sm:text-sm font-semibold hover:bg-slate-50 transition-all cursor-pointer touch-manipulation"
+                  disabled={saving || saveSuccess}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 text-xs sm:text-sm font-semibold hover:bg-slate-50 transition-all cursor-pointer touch-manipulation disabled:opacity-50"
                 >
                   <RefreshCw className="w-4 h-4" />
                   <span>Foto Ulang</span>
@@ -303,15 +329,27 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
                 <button
                   type="button"
                   onClick={handleConfirmSave}
-                  disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-xs sm:text-sm font-semibold transition-all shadow-md shadow-red-500/20 cursor-pointer touch-manipulation"
+                  disabled={saving || saveSuccess}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl ${
+                    saveSuccess
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-red-600 hover:bg-red-700 active:bg-red-800 text-white'
+                  } text-xs sm:text-sm font-semibold transition-all shadow-md shadow-red-500/20 cursor-pointer touch-manipulation disabled:opacity-50`}
                 >
                   {saving ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : saveSuccess ? (
+                    <CheckCircle2 className="w-4 h-4" />
                   ) : (
                     <Sparkles className="w-4 h-4" />
                   )}
-                  <span>{saving ? 'Menyimpan...' : 'Simpan Profil'}</span>
+                  <span>
+                    {saving
+                      ? 'Menyimpan...'
+                      : saveSuccess
+                      ? 'Tersimpan!'
+                      : 'Simpan Profil'}
+                  </span>
                 </button>
               </div>
             </div>

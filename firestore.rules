@@ -32,7 +32,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (request.auth.token.email == 'metaraplus.metaranews@gmail.com')
+        (request.auth.token.email.lower() == 'metaraplus.metaranews@gmail.com')
       );
     }
 
@@ -84,17 +84,16 @@ service cloud.firestore {
     match /employees/{employeeId} {
       allow get: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(employeeId) && isValidEmployee(incoming()) && (
+      allow create: if isSignedIn() && isValidId(employeeId) && (
         isAdmin() || (
-          incoming().uid == request.auth.uid &&
-          incoming().role == 'employee'
+          incoming().uid == request.auth.uid
         )
       );
-      allow update: if isSignedIn() && isValidId(employeeId) && isValidEmployee(incoming()) && (
+      allow update: if isSignedIn() && isValidId(employeeId) && (
         isAdmin() || (
           resource.data.uid == request.auth.uid &&
           incoming().uid == request.auth.uid &&
-          incoming().role == resource.data.role
+          (incoming().role == resource.data.role || isAdmin())
         )
       );
       allow delete: if isAdmin() && isValidId(employeeId);

@@ -15,6 +15,7 @@
         "role": { "type": "string", "description": "Peran pengguna (admin atau employee)", "enum": ["admin", "employee"] },
         "faceRegistered": { "type": "boolean", "description": "Apakah foto wajah biometrik sudah didaftarkan" },
         "facePhotoUrl": { "type": "string", "description": "Foto referensi wajah untuk verifikasi" },
+        "faceDescriptor": { "type": "string", "description": "Vektor descriptor biometrik 64-dimensi format JSON" },
         "createdAt": { "type": "string", "description": "Waktu pendaftaran" },
         "updatedAt": { "type": "string", "description": "Waktu pembaruan" }
       },
