@@ -11,10 +11,30 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  deleteDoc,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, testConnection } from '../firebase/config';
 import { Employee } from '../types';
 import { saveRecentAccount } from '../utils/recentAccounts';
+
+// Helper to strip undefined values so Firestore doesn't reject writes
+function cleanData<T extends Record<string, any>>(obj: T): T {
+  const out: any = {};
+  for (const k of Object.keys(obj)) {
+    if (obj[k] !== undefined) {
+      if (obj[k] && typeof obj[k] === 'object' && !Array.isArray(obj[k])) {
+        out[k] = cleanData(obj[k]);
+      } else {
+        out[k] = obj[k];
+      }
+    }
+  }
+  return out;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -65,16 +85,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      let existingEmpData: Employee | null = null;
+
       if (empSnap.exists()) {
-        const data = empSnap.data() as Employee;
-        const userIsAdmin = isDefaultAdmin || data.role === 'admin';
+        existingEmpData = empSnap.data() as Employee;
+      } else if (firebaseUser.email) {
+        // Check if pre-registered by HR Admin by matching email
+        try {
+          const q = query(
+            collection(db, 'employees'),
+            where('email', '==', firebaseUser.email.trim())
+          );
+          const qSnap = await getDocs(q);
+          if (!qSnap.empty) {
+            const preDoc = qSnap.docs[0];
+            existingEmpData = preDoc.data() as Employee;
+            // Clean up pre-doc if it used an auto-generated ID (emp_*)
+            if (preDoc.id !== firebaseUser.uid) {
+              try {
+                await deleteDoc(doc(db, 'employees', preDoc.id));
+              } catch (delErr) {
+                console.warn('Pre-doc cleanup note:', delErr);
+              }
+            }
+          }
+        } catch (queryErr) {
+          console.warn('Pre-registered search note:', queryErr);
+        }
+      }
+
+      if (existingEmpData) {
+        const userIsAdmin = isDefaultAdmin || existingEmpData.role === 'admin';
         setIsAdmin(userIsAdmin);
         const resolvedEmp: Employee = {
-          ...data,
+          ...existingEmpData,
           id: firebaseUser.uid,
           uid: firebaseUser.uid,
-          role: userIsAdmin ? 'admin' : data.role,
+          role: userIsAdmin ? 'admin' : existingEmpData.role,
         };
+        await setDoc(empRef, cleanData(resolvedEmp), { merge: true });
         setEmployee(resolvedEmp);
 
         // Save account to recent accounts for fast login
@@ -105,14 +154,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updatedAt: new Date().toISOString(),
         };
 
-        const cleanEmployeePayload: any = {};
-        for (const [k, v] of Object.entries(newEmployee)) {
-          if (v !== undefined) {
-            cleanEmployeePayload[k] = v;
-          }
-        }
-
-        await setDoc(empRef, cleanEmployeePayload);
+        await setDoc(empRef, cleanData(newEmployee));
         setEmployee(newEmployee);
         setIsAdmin(isDefaultAdmin);
 
@@ -173,20 +215,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateEmployeeProfile = async (data: Partial<Employee>) => {
-    if (!user || !employee) return;
+    if (!user) return;
     try {
       const empRef = doc(db, 'employees', user.uid);
       const updateData: any = {
+        uid: user.uid,
         ...data,
         updatedAt: new Date().toISOString(),
       };
-      for (const k of Object.keys(updateData)) {
-        if (updateData[k] === undefined) {
-          delete updateData[k];
-        }
-      }
-      await updateDoc(empRef, updateData);
-      setEmployee((prev) => (prev ? { ...prev, ...updateData } : null));
+      await setDoc(empRef, cleanData(updateData), { merge: true });
+      setEmployee((prev) => (prev ? { ...prev, ...data } : null));
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `employees/${user.uid}`);
     }

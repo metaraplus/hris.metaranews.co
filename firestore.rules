@@ -82,27 +82,37 @@ service cloud.firestore {
 
     // Employees Collection
     match /employees/{employeeId} {
-      allow get: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        employeeId == request.auth.uid ||
+        (resource != null && 'uid' in resource.data && resource.data.uid == request.auth.uid)
+      );
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(employeeId) && (
-        isAdmin() || (
-          incoming().uid == request.auth.uid
-        )
+        isAdmin() ||
+        employeeId == request.auth.uid ||
+        ('uid' in incoming() && incoming().uid == request.auth.uid)
       );
       allow update: if isSignedIn() && isValidId(employeeId) && (
-        isAdmin() || (
-          resource.data.uid == request.auth.uid &&
-          incoming().uid == request.auth.uid &&
-          (incoming().role == resource.data.role || isAdmin())
-        )
+        isAdmin() ||
+        employeeId == request.auth.uid ||
+        (resource != null && 'uid' in resource.data && resource.data.uid == request.auth.uid)
+      ) && (
+        isAdmin() ||
+        !('role' in incoming()) ||
+        incoming().role == 'employee' ||
+        (resource != null && 'role' in resource.data && incoming().role == resource.data.role)
       );
       allow delete: if isAdmin() && isValidId(employeeId);
     }
 
     // Attendance Collection
     match /attendances/{attendanceId} {
-      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid)
+      );
+      allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(attendanceId) && isValidAttendance(incoming()) && (
         isAdmin() || (
           incoming().userId == request.auth.uid
@@ -110,7 +120,6 @@ service cloud.firestore {
       );
       allow update: if isSignedIn() && isValidId(attendanceId) && isValidAttendance(incoming()) && (
         isAdmin() || (
-          resource.data.userId == request.auth.uid &&
           incoming().userId == request.auth.uid
         )
       );
