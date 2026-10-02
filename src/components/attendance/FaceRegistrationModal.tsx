@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Sparkles,
   ShieldCheck,
+  Smartphone,
+  Upload,
 } from 'lucide-react';
 import {
   analyzeFaceInVideo,
@@ -30,6 +32,8 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [cameraActive, setCameraActive] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [capturedDescriptor, setCapturedDescriptor] = useState<number[]>([]);
@@ -38,27 +42,47 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // Start Camera
+  // Start Camera with iOS Safari & Android support
   const startCamera = async () => {
     setCameraError(null);
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Browser ini tidak mendukung streaming kamera langsung.');
+      }
+
+      // Stop any existing tracks first to avoid device lock on mobile
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
           width: { ideal: 640 },
           height: { ideal: 480 },
         },
+        audio: false,
       });
+
       streamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        videoRef.current.muted = true;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('webkit-playsinline', 'true');
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn('Video play delay on mobile:', playErr);
+        }
       }
       setCameraActive(true);
     } catch (err: any) {
       console.error('Camera access error:', err);
       setCameraError(
-        'Gagal mengakses kamera. Pastikan izin kamera telah diberikan pada browser Anda.'
+        'Kamera langsung terkendala pada perangkat ini. Anda dapat mencoba lagi atau gunakan tombol kamera ponsel di bawah.'
       );
       setCameraActive(false);
     }
@@ -113,7 +137,7 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
     };
   }, [cameraActive, capturedPhoto]);
 
-  // Capture face
+  // Capture face via live video
   const handleCapture = () => {
     if (!videoRef.current) return;
     const photo = captureSelfiePhoto(videoRef.current);
@@ -132,6 +156,34 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
 
     setCapturedPhoto(photo);
     stopCamera();
+  };
+
+  // Fallback: capture or select photo using native mobile camera
+  const handleFileCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 240;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 320, 240);
+          const desc = extractFaceDescriptor(canvas);
+          const compressedPhoto = canvas.toDataURL('image/jpeg', 0.85);
+          setCapturedPhoto(compressedPhoto);
+          setCapturedDescriptor(desc);
+          stopCamera();
+        }
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRetake = () => {
@@ -156,46 +208,73 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
-      <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto">
+      {/* Hidden file input for native camera fallback */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="user"
+        onChange={handleFileCapture}
+        className="hidden"
+      />
+
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/70 sticky top-0 z-10">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-800 text-base">Registrasi Wajah Biometrik</h3>
+              <h3 className="font-bold text-slate-800 text-sm sm:text-base">
+                Registrasi Wajah Biometrik
+              </h3>
               <p className="text-xs text-slate-500">
-                Untuk: <span className="font-semibold text-slate-700">{targetEmployee?.name}</span> ({targetEmployee?.employeeNumber})
+                Karyawan: <span className="font-semibold text-slate-700">{targetEmployee?.name}</span>
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer touch-manipulation"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6">
+        <div className="p-5 sm:p-6">
           {cameraError ? (
-            <div className="text-center py-8">
+            <div className="text-center py-6">
               <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-              <p className="text-sm font-semibold text-slate-800 mb-2">{cameraError}</p>
-              <button
-                onClick={startCamera}
-                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
-              >
-                Coba Akses Kamera Lagi
-              </button>
+              <p className="text-xs sm:text-sm font-semibold text-slate-800 mb-2">
+                {cameraError}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2.5 justify-center mt-5">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 shadow-md shadow-red-500/20 cursor-pointer touch-manipulation"
+                >
+                  <Smartphone className="w-4 h-4" />
+                  <span>Gunakan Kamera Ponsel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="px-4 py-2.5 border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Coba Akses Lagi</span>
+                </button>
+              </div>
             </div>
           ) : capturedPhoto ? (
             /* Review Captured Selfie */
             <div className="flex flex-col items-center">
-              <div className="relative w-64 h-64 rounded-2xl overflow-hidden border-4 border-emerald-500 shadow-md">
+              <div className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-2xl overflow-hidden border-4 border-emerald-500 shadow-md">
                 <img
                   src={capturedPhoto}
                   alt="Captured face"
@@ -213,17 +292,19 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
 
               <div className="flex items-center gap-3 mt-6 w-full">
                 <button
+                  type="button"
                   onClick={handleRetake}
                   disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-all"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 text-xs sm:text-sm font-semibold hover:bg-slate-50 transition-all cursor-pointer touch-manipulation"
                 >
                   <RefreshCw className="w-4 h-4" />
                   <span>Foto Ulang</span>
                 </button>
                 <button
+                  type="button"
                   onClick={handleConfirmSave}
                   disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-xs sm:text-sm font-semibold transition-all shadow-md shadow-red-500/20 cursor-pointer touch-manipulation"
                 >
                   {saving ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -237,9 +318,10 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
           ) : (
             /* Live Camera HUD */
             <div className="flex flex-col items-center">
-              <div className="relative w-72 h-72 sm:w-80 sm:h-80 rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center shadow-inner">
+              <div className="relative w-64 h-64 sm:w-80 sm:h-80 rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center shadow-inner">
                 <video
                   ref={videoRef}
+                  autoPlay
                   playsInline
                   muted
                   className="w-full h-full object-cover scale-x-[-1]"
@@ -247,19 +329,14 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
 
                 {/* Biometric Target Overlay */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  {/* Oval target boundary */}
                   <div
-                    className={`w-44 h-56 rounded-[50%] border-2 transition-all duration-300 ${
+                    className={`w-40 h-52 sm:w-44 sm:h-56 rounded-[50%] border-2 transition-all duration-300 ${
                       faceDetected
                         ? 'border-emerald-400 ring-4 ring-emerald-500/20'
-                        : 'border-blue-400/80 border-dashed animate-pulse'
+                        : 'border-red-400/80 border-dashed animate-pulse'
                     }`}
                   />
-
-                  {/* Corner Guides */}
-                  <div className="absolute inset-8 border border-white/20 rounded-xl" />
-
-                  {/* Scanning beam effect when face detected */}
+                  <div className="absolute inset-6 border border-white/20 rounded-xl" />
                   {faceDetected && (
                     <div className="absolute inset-x-8 top-1/4 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-bounce opacity-70" />
                   )}
@@ -277,7 +354,7 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
                     {faceDetected ? (
                       <CheckCircle2 className="w-3.5 h-3.5" />
                     ) : (
-                      <Camera className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                      <Camera className="w-3.5 h-3.5 text-red-400 animate-pulse" />
                     )}
                     <span>{detectionMessage}</span>
                   </div>
@@ -285,20 +362,30 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
               </div>
 
               {/* Instructions */}
-              <div className="mt-4 text-center">
+              <div className="mt-3 text-center">
                 <p className="text-xs text-slate-500">
-                  Pastikan pencahayaan cukup terang dan hadapkan wajah lurus ke arah kamera.
+                  Posisikan wajah lurus ke arah kamera dengan pencahayaan yang cukup.
                 </p>
               </div>
 
-              {/* Capture Button */}
-              <div className="mt-5 w-full flex justify-center">
+              {/* Action Buttons */}
+              <div className="mt-4 w-full flex flex-col sm:flex-row gap-2.5 justify-center">
                 <button
+                  type="button"
                   onClick={handleCapture}
-                  className="flex items-center justify-center gap-2 py-3 px-8 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-all shadow-md shadow-blue-500/25 active:scale-95"
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-xs sm:text-sm font-semibold transition-all shadow-md shadow-red-500/20 active:scale-95 cursor-pointer touch-manipulation"
                 >
-                  <Camera className="w-5 h-5" />
+                  <Camera className="w-4 h-4" />
                   <span>Ambil Foto Wajah</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer touch-manipulation"
+                >
+                  <Smartphone className="w-4 h-4 text-slate-500" />
+                  <span>Kamera Bawaan Ponsel</span>
                 </button>
               </div>
             </div>

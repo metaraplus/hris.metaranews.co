@@ -57,8 +57,23 @@ function MainApp() {
   }, [user, isAdmin]);
 
   const handleOpenMyFaceRegistration = () => {
-    if (employee) {
-      setTargetFaceEmployee(employee);
+    // If employee document is still syncing, create fallback employee so registration modal always opens
+    const target = employee || (user ? {
+      id: user.uid,
+      uid: user.uid,
+      employeeNumber: 'EMP-0001',
+      name: user.displayName || user.email?.split('@')[0] || 'Karyawan',
+      email: user.email || '',
+      department: 'Operasional',
+      position: 'Staff Karyawan',
+      role: isAdmin ? 'admin' : 'employee',
+      faceRegistered: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Employee : null);
+
+    if (target) {
+      setTargetFaceEmployee(target);
       setFaceModalOpen(true);
     }
   };
@@ -72,12 +87,12 @@ function MainApp() {
     if (!targetFaceEmployee) return;
     try {
       const empRef = doc(db, 'employees', targetFaceEmployee.id);
-      await updateDoc(empRef, {
+      await setDoc(empRef, {
         faceRegistered: true,
         facePhotoUrl: photoUrl,
         faceDescriptor: descriptorJson,
         updatedAt: new Date().toISOString(),
-      });
+      }, { merge: true });
       await refreshEmployee();
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `employees/${targetFaceEmployee.id}`);
@@ -115,6 +130,7 @@ function MainApp() {
           <AttendanceClockIn
             officeSetting={officeSetting}
             onOpenFaceRegistration={handleOpenMyFaceRegistration}
+            isFaceModalOpen={faceModalOpen}
           />
         )}
 
