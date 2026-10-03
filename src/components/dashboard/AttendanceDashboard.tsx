@@ -19,9 +19,11 @@ import {
   Palmtree,
   FileCheck2,
   ChevronRight,
+  FileDown,
 } from 'lucide-react';
 import { AttendanceRecord, Employee, LeaveRequest } from '../../types';
 import { exportAttendancesToExcel } from '../../utils/excelExport';
+import { exportMonthlyAttendancePDF, calculateEmployeeWorkSummaries } from '../../utils/pdfExport';
 import { db, handleFirestoreError, OperationType } from '../../firebase/config';
 import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
@@ -31,7 +33,7 @@ interface AttendanceDashboardProps {
 }
 
 export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavigateToLeaves }) => {
-  const { user, isAdmin } = useAuth();
+  const { user, employee, isAdmin } = useAuth();
   const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +47,15 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
   // Selected Record for Detail Modal
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // PDF Export Modal State
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfMonthYear, setPdfMonthYear] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [pdfDept, setPdfDept] = useState('ALL');
 
   // Real-time Firestore sync
   useEffect(() => {
@@ -212,6 +223,40 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
     }, 400);
   };
 
+  // PDF Export Computation
+  const pdfAttendances = useMemo(() => {
+    return attendances.filter((att) => {
+      if (!att.date.startsWith(pdfMonthYear)) return false;
+      if (pdfDept !== 'ALL' && att.department !== pdfDept) return false;
+      return true;
+    });
+  }, [attendances, pdfMonthYear, pdfDept]);
+
+  const pdfWorkSummaries = useMemo(() => {
+    return calculateEmployeeWorkSummaries(pdfAttendances);
+  }, [pdfAttendances]);
+
+  const totalPdfWorkHours = useMemo(() => {
+    return Number(pdfWorkSummaries.reduce((acc, s) => acc + s.totalWorkHours, 0).toFixed(1));
+  }, [pdfWorkSummaries]);
+
+  const handleDownloadPDF = () => {
+    if (pdfAttendances.length === 0) {
+      alert('Tidak ada data presensi pada bulan dan departemen yang dipilih.');
+      return;
+    }
+    setIsExportingPdf(true);
+    setTimeout(() => {
+      exportMonthlyAttendancePDF(pdfAttendances, {
+        monthYearStr: pdfMonthYear,
+        departmentFilter: pdfDept,
+        adminName: employee?.name || user?.displayName || user?.email || 'HR Administrator',
+      });
+      setIsExportingPdf(false);
+      setIsPdfModalOpen(false);
+    }, 400);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       {/* Page Header */}
@@ -225,19 +270,31 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
           </p>
         </div>
 
-        {/* Export to Excel CTA */}
-        <button
-          onClick={handleExport}
-          disabled={isExporting || totalFiltered === 0}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-md shadow-emerald-600/20 active:scale-98 transition-all shrink-0 cursor-pointer disabled:opacity-50"
-        >
-          {isExporting ? (
-            <RefreshCw className="w-4 h-4 animate-spin" />
-          ) : (
-            <FileSpreadsheet className="w-4 h-4" />
-          )}
-          <span>Ekspor Rekap ke Excel (.xlsx)</span>
-        </button>
+        {/* Export Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Export to PDF CTA */}
+          <button
+            onClick={() => setIsPdfModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm shadow-md shadow-rose-600/20 active:scale-98 transition-all shrink-0 cursor-pointer"
+          >
+            <FileDown className="w-4 h-4" />
+            <span>Laporan PDF Bulanan</span>
+          </button>
+
+          {/* Export to Excel CTA */}
+          <button
+            onClick={handleExport}
+            disabled={isExporting || totalFiltered === 0}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-md shadow-emerald-600/20 active:scale-98 transition-all shrink-0 cursor-pointer disabled:opacity-50"
+          >
+            {isExporting ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            <span>Ekspor Excel (.xlsx)</span>
+          </button>
+        </div>
       </div>
 
       {/* Alert banner for pending leave requests */}
@@ -957,6 +1014,138 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly PDF Export Modal */}
+      {isPdfModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <FileDown className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">Cetak Laporan PDF Bulanan</h3>
+                  <p className="text-xs text-slate-500">
+                    Laporan resmi rekapitulasi kehadiran dan total jam kerja tiap karyawan
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPdfModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Month Selector */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Pilih Periode Bulan & Tahun *
+                </label>
+                <input
+                  type="month"
+                  value={pdfMonthYear}
+                  onChange={(e) => setPdfMonthYear(e.target.value)}
+                  className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                />
+              </div>
+
+              {/* Department Filter */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Pilih Departemen
+                </label>
+                <select
+                  value={pdfDept}
+                  onChange={(e) => setPdfDept(e.target.value)}
+                  className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-slate-700"
+                >
+                  <option value="ALL">Semua Departemen (Seluruh Perusahaan)</option>
+                  {departments.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Preview Summary Box */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                <span className="font-bold text-slate-800 uppercase tracking-wider block text-[11px]">
+                  Pratinjau Data yang Akan Dicetak:
+                </span>
+                <div className="grid grid-cols-2 gap-2 text-slate-600">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200/60">
+                    <span className="text-slate-400 block text-[10px]">Jumlah Karyawan</span>
+                    <span className="font-bold text-slate-800 text-sm">
+                      {pdfWorkSummaries.length} Orang
+                    </span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200/60">
+                    <span className="text-slate-400 block text-[10px]">Total Jam Kerja</span>
+                    <span className="font-bold text-blue-600 text-sm">
+                      {totalPdfWorkHours} Jam
+                    </span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200/60">
+                    <span className="text-slate-400 block text-[10px]">Total Log Presensi</span>
+                    <span className="font-bold text-slate-800 text-sm">
+                      {pdfAttendances.length} Hari Kerja
+                    </span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200/60">
+                    <span className="text-slate-400 block text-[10px]">Format Dokumen</span>
+                    <span className="font-bold text-rose-600 text-sm">
+                      PDF Landscape A4
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>
+                    Dilengkapi ringkasan jam kerja total tiap karyawan & lembar tanda tangan pengesahan.
+                  </span>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPdfModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isExportingPdf || pdfAttendances.length === 0}
+                  onClick={handleDownloadPDF}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs active:scale-98 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isExportingPdf ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Membuat PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileDown className="w-3.5 h-3.5" />
+                      <span>Unduh Laporan PDF</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
