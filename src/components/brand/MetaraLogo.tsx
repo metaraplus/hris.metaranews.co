@@ -3,11 +3,13 @@ import React from 'react';
 interface MetaraLogoProps {
   className?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  variant?: 'mark' | 'full';
 }
 
 export const MetaraLogo: React.FC<MetaraLogoProps> = ({
   className = '',
   size = 'md',
+  variant = 'mark',
 }) => {
   const sizeClasses = {
     sm: 'w-10 h-10',
@@ -16,16 +18,33 @@ export const MetaraLogo: React.FC<MetaraLogoProps> = ({
     xl: 'w-28 h-28 sm:w-32 sm:h-32',
   }[size];
 
+  if (variant === 'full') {
+    return (
+      <div className={`relative inline-flex items-center justify-center shrink-0 ${className}`}>
+        <img
+          src="/logo-metara-tagline.png"
+          alt="Metaranews - Setara Bercerita"
+          className="h-10 sm:h-12 w-auto object-contain drop-shadow-sm"
+          onError={(e) => {
+            const target = e.currentTarget;
+            target.onerror = null;
+            target.src = '/logo-metara.png';
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={`relative inline-flex items-center justify-center shrink-0 ${className}`}>
       <img
         src="/logo-metara.png"
         alt="Logo Metara"
-        className={`${sizeClasses} object-contain rounded-full shadow-md bg-white`}
+        className={`${sizeClasses} object-contain rounded-2xl p-2 bg-white shadow-xl border border-white/20`}
         onError={(e) => {
           const target = e.currentTarget;
           target.onerror = null;
-          target.src = '/src/assets/images/metara_circular_badge_1790953093074.jpg';
+          target.src = '/logo-m.png';
         }}
       />
     </div>
