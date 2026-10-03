@@ -32,6 +32,7 @@
         "employeeNumber": { "type": "string", "description": "Nomor Induk Pegawai", "maxLength": 50 },
         "department": { "type": "string", "description": "Departemen karyawan", "maxLength": 100 },
         "date": { "type": "string", "description": "Tanggal absensi format YYYY-MM-DD", "maxLength": 20 },
+        "category": { "type": "string", "description": "Kategori kehadiran kerja", "enum": ["WFO", "WFH", "WFA", "CLIENT_VISIT"] },
         "checkInTime": { "type": "string", "description": "Jam masuk", "maxLength": 20 },
         "checkInLocation": { "type": "object", "description": "Data koordinat GPS dan verifikasi radius masuk" },
         "checkInPhoto": { "type": "string", "description": "Foto selfie saat clock-in" },

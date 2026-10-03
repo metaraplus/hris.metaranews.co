@@ -37,6 +37,8 @@ export interface Employee {
   updatedAt?: string;
 }
 
+export type AbsenceCategory = 'WFO' | 'WFH' | 'WFA' | 'CLIENT_VISIT';
+
 export interface AttendanceRecord {
   id: string;
   employeeId: string;
@@ -45,6 +47,7 @@ export interface AttendanceRecord {
   employeeNumber: string;
   department: string;
   date: string; // YYYY-MM-DD
+  category?: AbsenceCategory; // WFO, WFH, WFA, CLIENT_VISIT
   checkInTime?: string; // HH:mm:ss
   checkInTimestamp?: number;
   checkInLocation?: GPSCoordinate;

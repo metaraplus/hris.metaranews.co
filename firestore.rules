@@ -53,7 +53,8 @@ service cloud.firestore {
              data.userId is string && data.userId.size() <= 128 &&
              data.employeeName is string && data.employeeName.size() <= 100 &&
              data.date is string && data.date.size() <= 20 &&
-             data.status in ['present', 'late', 'half_day', 'absent', 'sick', 'permit', 'annual_leave'];
+             data.status in ['present', 'late', 'half_day', 'absent', 'sick', 'permit', 'annual_leave'] &&
+             (!('category' in data) || data.category in ['WFO', 'WFH', 'WFA', 'CLIENT_VISIT']);
     }
 
     function isValidLeave(data) {

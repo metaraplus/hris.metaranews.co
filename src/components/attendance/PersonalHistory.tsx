@@ -170,6 +170,11 @@ export const PersonalHistory: React.FC = () => {
                           {r.checkInStatus === 'on_time' ? 'Tepat Waktu' : 'Terlambat'}
                         </span>
                       )}
+                      {r.category && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                          {r.category === 'CLIENT_VISIT' ? 'Client Visit' : r.category}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">

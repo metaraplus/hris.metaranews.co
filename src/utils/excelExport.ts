@@ -36,6 +36,7 @@ export function exportAttendancesToExcel(
       'NIP': att.employeeNumber || '-',
       'Nama Karyawan': att.employeeName,
       'Departemen': att.department || '-',
+      'Kategori': att.category || 'WFO',
       'Jam Masuk': att.checkInTime || '-',
       'Status Masuk': inStatusText,
       'Jarak GPS Masuk': checkInDistance,

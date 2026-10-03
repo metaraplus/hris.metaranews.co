@@ -552,8 +552,23 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
                             </div>
                           )}
                           <div>
-                            <div className="font-semibold text-slate-900 leading-tight">
-                              {att.employeeName}
+                            <div className="font-semibold text-slate-900 leading-tight flex items-center gap-1.5 flex-wrap">
+                              <span>{att.employeeName}</span>
+                              {att.category && (
+                                <span
+                                  className={`text-[10px] px-1.5 py-0.2 rounded-md font-bold ${
+                                    att.category === 'WFO'
+                                      ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                      : att.category === 'WFH'
+                                      ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                      : att.category === 'WFA'
+                                      ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  }`}
+                                >
+                                  {att.category === 'CLIENT_VISIT' ? 'Client Visit' : att.category}
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-slate-400 font-mono">
                               {att.employeeNumber} • {att.department}
@@ -721,8 +736,13 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-800 text-base">Detail Bukti Presensi</h3>
-                  <p className="text-xs text-slate-500 font-mono">
-                    {selectedRecord.employeeName} ({selectedRecord.employeeNumber}) • {selectedRecord.date}
+                  <p className="text-xs text-slate-500 font-mono flex items-center gap-1.5 mt-0.5">
+                    <span>{selectedRecord.employeeName} ({selectedRecord.employeeNumber}) • {selectedRecord.date}</span>
+                    {selectedRecord.category && (
+                      <span className="font-bold px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-800 border border-blue-200">
+                        {selectedRecord.category === 'CLIENT_VISIT' ? 'Client Visit' : selectedRecord.category}
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>

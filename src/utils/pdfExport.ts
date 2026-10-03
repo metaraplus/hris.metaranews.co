@@ -359,6 +359,8 @@ export function exportMonthlyAttendancePDF(
     const hoursStr = att.workHours ? `${att.workHours} Jam` : isLeave ? '0 Jam' : '-';
     const distanceStr = att.checkInLocation?.distanceMeters !== undefined ? `${att.checkInLocation.distanceMeters}m` : '-';
 
+    const fullStatus = att.category && !isLeave ? `${att.category} - ${statusLabel}` : statusLabel;
+
     return [
       idx + 1,
       att.date,
@@ -369,7 +371,7 @@ export function exportMonthlyAttendancePDF(
       checkOutStr,
       hoursStr,
       distanceStr,
-      statusLabel,
+      fullStatus,
     ];
   });
 

@@ -13,6 +13,10 @@ import {
   LogOut as ClockOutIcon,
   LogIn as ClockInIcon,
   UserCheck,
+  Building2,
+  Home,
+  Globe,
+  Briefcase,
 } from 'lucide-react';
 import {
   getCurrentGPSPosition,
@@ -26,7 +30,7 @@ import {
   extractFaceDescriptor,
   compareDescriptors,
 } from '../../utils/faceRecognition';
-import { GPSCoordinate, OfficeSetting, AttendanceRecord } from '../../types';
+import { GPSCoordinate, OfficeSetting, AttendanceRecord, AbsenceCategory } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../../firebase/config';
 import {
@@ -87,6 +91,7 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [attendanceSuccessMessage, setAttendanceSuccessMessage] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
+  const [absenceCategory, setAbsenceCategory] = useState<AbsenceCategory>('WFO');
 
   // Get Today's date string YYYY-MM-DD in local time
   const getTodayDateString = () => {
@@ -263,7 +268,10 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
     ? evaluateGeofence(gpsLocation, officeSetting)
     : null;
 
-  const effectiveWithinGeofence = allowLocationOverrideForDemo
+  // Offsite work (WFH, WFA, CLIENT_VISIT) allows remote check-in while recording verified GPS
+  const isOffsiteWork = absenceCategory !== 'WFO';
+
+  const effectiveWithinGeofence = allowLocationOverrideForDemo || isOffsiteWork
     ? true
     : geofenceResult?.withinGeofence ?? false;
 
@@ -324,6 +332,7 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
         employeeNumber: employee?.employeeNumber || 'EMP-001',
         department: employee?.department || 'Umum',
         date: todayStr,
+        category: absenceCategory,
         checkInTime: timeStr,
         checkInTimestamp: now.getTime(),
         checkInLocation: {
@@ -368,8 +377,15 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
         }
       }
 
+      const categoryLabels: Record<AbsenceCategory, string> = {
+        WFO: 'WFO (Kantor)',
+        WFH: 'WFH (Rumah)',
+        WFA: 'WFA (Fleksibel)',
+        CLIENT_VISIT: 'Client Visit / Liputan',
+      };
+
       setAttendanceSuccessMessage(
-        `Presensi Masuk Berhasil dicatat pada ${timeStr} WIB (${
+        `Presensi Masuk [${categoryLabels[absenceCategory]}] Berhasil dicatat pada ${timeStr} WIB (${
           checkInStatus === 'on_time' ? 'Tepat Waktu' : 'Terlambat'
         })!`
       );
@@ -578,8 +594,60 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
             </div>
           )}
 
+          {/* Absence Category Dropdown Selector (Only shown before clock-in) */}
+          {!todayAttendance && (
+            <div className="mt-4">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Kategori Presensi (Absence Category) *</span>
+                <span className="text-[11px] font-bold text-blue-600">
+                  {absenceCategory === 'WFO' && '🏢 Work From Office'}
+                  {absenceCategory === 'WFH' && '🏠 Work From Home'}
+                  {absenceCategory === 'WFA' && '🌍 Work From Anywhere'}
+                  {absenceCategory === 'CLIENT_VISIT' && '🤝 Client Visit / Liputan'}
+                </span>
+              </label>
+
+              <div className="relative">
+                <select
+                  value={absenceCategory}
+                  onChange={(e) => setAbsenceCategory(e.target.value as AbsenceCategory)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50 text-slate-800 cursor-pointer shadow-xs"
+                >
+                  <option value="WFO">🏢 WFO (Work From Office) - Kantor Redaksi</option>
+                  <option value="WFH">🏠 WFH (Work From Home) - Dari Rumah</option>
+                  <option value="WFA">🌍 WFA (Work From Anywhere) - Fleksibel / Lapangan</option>
+                  <option value="CLIENT_VISIT">🤝 Client Visit - Kunjungan Klien / Mitra</option>
+                </select>
+              </div>
+
+              {/* Contextual guidance for selected category */}
+              <p className="mt-1.5 text-[11px] text-slate-500 leading-relaxed">
+                {absenceCategory === 'WFO' && (
+                  <span>
+                    Bekerja langsung di kantor redaksi. Radius geofence ({officeSetting.radiusMeters}m) wajib terpenuhi.
+                  </span>
+                )}
+                {absenceCategory === 'WFH' && (
+                  <span className="text-blue-700 font-medium">
+                    Bekerja dari rumah. Lokasi GPS saat ini akan otomatis dicatat sebagai bukti presensi remote.
+                  </span>
+                )}
+                {absenceCategory === 'WFA' && (
+                  <span className="text-purple-700 font-medium">
+                    Bekerja fleksibel di luar kantor / liputan berita. Lokasi GPS saat ini otomatis diverifikasi.
+                  </span>
+                )}
+                {absenceCategory === 'CLIENT_VISIT' && (
+                  <span className="text-emerald-700 font-medium">
+                    Tugas luar kota, pertemuan mitra, atau liputan lapangan. Disarankan menuliskan nama mitra di catatan.
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+
           {/* Optional Notes Input */}
-          <div className="mt-4">
+          <div className="mt-3.5">
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Catatan Kehadiran (Opsional):
             </label>
@@ -599,10 +667,17 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center">
                 <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-1" />
                 <h4 className="font-bold text-slate-800 text-sm">Presensi Hari Ini Lengkap</h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Masuk: {todayAttendance.checkInTime} WIB | Pulang: {todayAttendance.checkOutTime} WIB
-                  (Total {todayAttendance.workHours} Jam Kerja)
-                </p>
+                <div className="flex items-center justify-center gap-2 mt-1">
+                  {todayAttendance.category && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                      {todayAttendance.category}
+                    </span>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    Masuk: {todayAttendance.checkInTime} WIB | Pulang: {todayAttendance.checkOutTime} WIB
+                    (Total {todayAttendance.workHours} Jam Kerja)
+                  </p>
+                </div>
               </div>
             ) : todayAttendance ? (
               /* Already clocked in, offer Clock Out */
@@ -612,6 +687,11 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
                     <Clock className="w-4 h-4 text-amber-600" />
                     <span>
                       Telah Clock-In pada <strong>{todayAttendance.checkInTime} WIB</strong>
+                      {todayAttendance.category && (
+                        <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-slate-800 border border-amber-300">
+                          {todayAttendance.category}
+                        </span>
+                      )}
                     </span>
                   </div>
                   <span className="font-bold text-amber-800">Sedang Bekerja</span>
@@ -757,10 +837,16 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
                     </div>
                     <div>
                       <div className="text-xs font-semibold">
-                        {effectiveWithinGeofence ? 'Dalam Area Kantor' : 'Di Luar Area Kantor'}
+                        {isOffsiteWork
+                          ? `Presensi Luar Kantor (${absenceCategory})`
+                          : effectiveWithinGeofence
+                          ? 'Dalam Area Kantor'
+                          : 'Di Luar Area Kantor'}
                       </div>
                       <div className="text-base font-bold">
-                        {geofenceResult ? formatDistance(geofenceResult.distanceMeters) : '--'}
+                        {isOffsiteWork
+                          ? 'Koordinat GPS Aktif'
+                          : geofenceResult ? formatDistance(geofenceResult.distanceMeters) : '--'}
                       </div>
                     </div>
                   </div>
