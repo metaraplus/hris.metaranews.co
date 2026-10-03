@@ -29,6 +29,7 @@ import {
   captureSelfiePhoto,
   extractFaceDescriptor,
   compareDescriptors,
+  drawProportionalCover,
 } from '../../utils/faceRecognition';
 import { GPSCoordinate, OfficeSetting, AttendanceRecord, AbsenceCategory } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -359,10 +360,10 @@ export const AttendanceClockIn: React.FC<AttendanceClockInProps> = ({
         try {
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = 320;
-          tempCanvas.height = 240;
+          tempCanvas.height = 320;
           const ctx = tempCanvas.getContext('2d');
           if (ctx && videoRef.current) {
-            ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+            drawProportionalCover(videoRef.current, ctx, 320, 320, true);
             const desc = extractFaceDescriptor(tempCanvas);
             await updateDoc(doc(db, 'employees', user.uid), {
               faceRegistered: true,

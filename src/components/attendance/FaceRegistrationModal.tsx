@@ -14,6 +14,8 @@ import {
   analyzeFaceInVideo,
   captureSelfiePhoto,
   extractFaceDescriptor,
+  drawProportionalCover,
+  cropImageToSquare,
 } from '../../utils/faceRecognition';
 import { Employee } from '../../types';
 
@@ -147,13 +149,13 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
     const photo = captureSelfiePhoto(videoRef.current);
     if (!photo) return;
 
-    // Extract biometric descriptor from current video frame
+    // Extract biometric descriptor from current video frame using proportional 320x320 crop
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = 320;
-    tempCanvas.height = 240;
+    tempCanvas.height = 320;
     const ctx = tempCanvas.getContext('2d');
     if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+      drawProportionalCover(videoRef.current, ctx, 320, 320, true);
       const desc = extractFaceDescriptor(tempCanvas);
       setCapturedDescriptor(desc);
     }
@@ -172,18 +174,12 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({
       const dataUrl = event.target?.result as string;
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 320;
-        canvas.height = 240;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, 320, 240);
-          const desc = extractFaceDescriptor(canvas);
-          const compressedPhoto = canvas.toDataURL('image/jpeg', 0.85);
-          setCapturedPhoto(compressedPhoto);
-          setCapturedDescriptor(desc);
-          stopCamera();
-        }
+        // Crop photo to 360x360 square without stretching or squashing
+        const { dataUrl: compressedPhoto, canvas } = cropImageToSquare(img, 360, 0.85);
+        const desc = extractFaceDescriptor(canvas);
+        setCapturedPhoto(compressedPhoto);
+        setCapturedDescriptor(desc);
+        stopCamera();
       };
       img.src = dataUrl;
     };
