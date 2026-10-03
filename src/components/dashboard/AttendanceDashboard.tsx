@@ -596,63 +596,194 @@ export const AttendanceDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Geolocation Details */}
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+              {/* Geolocation Details Side-by-Side: Clock-In & Clock-Out */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Verifikasi Lokasi & Koordinat GPS</span>
+                  <span>Verifikasi Lokasi & Koordinat GPS (Google Maps)</span>
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-slate-400 block">Jarak ke Kantor:</span>
-                    <span className="font-bold text-slate-800">
-                      {selectedRecord.checkInLocation?.distanceMeters !== undefined
-                        ? `${selectedRecord.checkInLocation.distanceMeters} Meter`
-                        : '-'}
-                    </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Lokasi Clock-In Card */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200/60">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                          <span className="text-xs font-bold text-slate-800">Lokasi Clock-In</span>
+                        </div>
+                        <span className="text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          {selectedRecord.checkInTime || '-'} WIB
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Jarak ke Kantor:</span>
+                          <span className="font-bold text-slate-800">
+                            {selectedRecord.checkInLocation?.distanceMeters !== undefined
+                              ? `${selectedRecord.checkInLocation.distanceMeters} Meter`
+                              : '-'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Status Radius:</span>
+                          <span
+                            className={`font-bold ${
+                              selectedRecord.checkInStatus === 'out_of_range'
+                                ? 'text-rose-600'
+                                : 'text-emerald-600'
+                            }`}
+                          >
+                            {selectedRecord.checkInStatus === 'out_of_range'
+                              ? 'Di Luar Radius'
+                              : 'Dalam Radius Kantor'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Koordinat GPS:</span>
+                          <span className="font-mono text-slate-700 text-[11px]">
+                            {selectedRecord.checkInLocation?.latitude
+                              ? `${selectedRecord.checkInLocation.latitude.toFixed(5)}, ${selectedRecord.checkInLocation.longitude.toFixed(5)}`
+                              : '-'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Akurasi GPS:</span>
+                          <span className="font-mono text-slate-600 text-[11px]">
+                            ±{selectedRecord.checkInLocation?.accuracy || 10} Meter
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-200/80 mt-3">
+                      {selectedRecord.checkInLocation?.latitude ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedRecord.checkInLocation.latitude},${selectedRecord.checkInLocation.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center w-full gap-2 px-3 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors shadow-2xs cursor-pointer"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span>Buka di Google Map (Clock-In)</span>
+                          <ExternalLink className="w-3 h-3 text-blue-500 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 block text-center py-1">
+                          Koordinat masuk tidak tersedia
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-slate-400 block">Status Geofence:</span>
-                    <span
-                      className={`font-bold ${
-                        selectedRecord.checkInStatus === 'out_of_range'
-                          ? 'text-rose-600'
-                          : 'text-emerald-600'
-                      }`}
-                    >
-                      {selectedRecord.checkInStatus === 'out_of_range'
-                        ? 'Di Luar Radius'
-                        : 'Dalam Radius Kantor'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">Koordinat Lat / Lng:</span>
-                    <span className="font-mono text-slate-700">
-                      {selectedRecord.checkInLocation?.latitude?.toFixed(5) || '-'},{' '}
-                      {selectedRecord.checkInLocation?.longitude?.toFixed(5) || '-'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">Akurasi Perangkat:</span>
-                    <span className="font-mono text-slate-700">
-                      ±{selectedRecord.checkInLocation?.accuracy || 10} Meter
-                    </span>
+
+                  {/* Lokasi Clock-Out Card */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200/60">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${
+                              selectedRecord.checkOutTime ? 'bg-rose-500' : 'bg-slate-300'
+                            }`}
+                          ></span>
+                          <span className="text-xs font-bold text-slate-800">Lokasi Clock-Out</span>
+                        </div>
+                        <span
+                          className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md border ${
+                            selectedRecord.checkOutTime
+                              ? 'text-rose-700 bg-rose-50 border-rose-200'
+                              : 'text-slate-500 bg-slate-100 border-slate-200'
+                          }`}
+                        >
+                          {selectedRecord.checkOutTime ? `${selectedRecord.checkOutTime} WIB` : 'Belum Pulang'}
+                        </span>
+                      </div>
+
+                      {selectedRecord.checkOutTime ? (
+                        <div className="space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Jarak ke Kantor:</span>
+                            <span className="font-bold text-slate-800">
+                              {selectedRecord.checkOutLocation?.distanceMeters !== undefined
+                                ? `${selectedRecord.checkOutLocation.distanceMeters} Meter`
+                                : '-'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Status Radius:</span>
+                            <span
+                              className={`font-bold ${
+                                selectedRecord.checkOutLocation?.withinGeofence === false
+                                  ? 'text-rose-600'
+                                  : 'text-emerald-600'
+                              }`}
+                            >
+                              {selectedRecord.checkOutLocation?.withinGeofence === false
+                                ? 'Di Luar Radius'
+                                : 'Dalam Radius Kantor'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Koordinat GPS:</span>
+                            <span className="font-mono text-slate-700 text-[11px]">
+                              {selectedRecord.checkOutLocation?.latitude
+                                ? `${selectedRecord.checkOutLocation.latitude.toFixed(5)}, ${selectedRecord.checkOutLocation.longitude.toFixed(5)}`
+                                : selectedRecord.checkInLocation?.latitude
+                                ? `${selectedRecord.checkInLocation.latitude.toFixed(5)}, ${selectedRecord.checkInLocation.longitude.toFixed(5)}`
+                                : '-'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Akurasi GPS:</span>
+                            <span className="font-mono text-slate-600 text-[11px]">
+                              ±{selectedRecord.checkOutLocation?.accuracy || selectedRecord.checkInLocation?.accuracy || 10} Meter
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-5 text-center">
+                          <p className="text-xs text-slate-500 font-medium">
+                            Karyawan aktif bekerja dan belum presensi pulang.
+                          </p>
+                          <span className="text-[11px] text-slate-400 mt-1 block">
+                            Lokasi Clock-Out akan terekam saat tombol pulang ditekan.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-200/80 mt-3">
+                      {selectedRecord.checkOutLocation?.latitude ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedRecord.checkOutLocation.latitude},${selectedRecord.checkOutLocation.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center w-full gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors shadow-2xs cursor-pointer"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>Buka di Google Map (Clock-Out)</span>
+                          <ExternalLink className="w-3 h-3 text-rose-500 shrink-0" />
+                        </a>
+                      ) : selectedRecord.checkOutTime && selectedRecord.checkInLocation?.latitude ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedRecord.checkInLocation.latitude},${selectedRecord.checkInLocation.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center w-full gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors shadow-2xs cursor-pointer"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>Buka di Google Map (Clock-Out)</span>
+                          <ExternalLink className="w-3 h-3 text-rose-500 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 block text-center py-1">
+                          {selectedRecord.checkOutTime ? 'Koordinat pulang tidak tersedia' : 'Menunggu Presensi Pulang'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-
-                {selectedRecord.checkInLocation?.latitude && (
-                  <div className="pt-2 border-t border-slate-200 mt-2">
-                    <a
-                      href={`https://www.google.com/maps?q=${selectedRecord.checkInLocation.latitude},${selectedRecord.checkInLocation.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800"
-                    >
-                      <span>Buka di Google Maps</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                )}
               </div>
 
               {/* Notes */}

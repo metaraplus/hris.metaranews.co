@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Camera,
+  ExternalLink,
 } from 'lucide-react';
 import { AttendanceRecord } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -175,7 +176,31 @@ export const PersonalHistory: React.FC = () => {
                       <MapPin className="w-3.5 h-3.5 text-slate-400" />
                       <span>{r.checkInLocation?.distanceMeters ?? 0}m dari kantor</span>
                     </div>
-                    <div className="text-[11px] text-emerald-600 font-medium">
+                    <div className="flex items-center gap-2 sm:justify-end mt-0.5">
+                      {r.checkInLocation?.latitude && (
+                        <a
+                          href={`https://www.google.com/maps?q=${r.checkInLocation.latitude},${r.checkInLocation.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800"
+                        >
+                          <span>Peta Masuk</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      )}
+                      {r.checkOutLocation?.latitude && (
+                        <a
+                          href={`https://www.google.com/maps?q=${r.checkOutLocation.latitude},${r.checkOutLocation.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800"
+                        >
+                          <span>Peta Pulang</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 font-medium mt-0.5">
                       Kecocokan Wajah: {r.checkInFaceMatchScore || 94}%
                     </div>
                   </div>
