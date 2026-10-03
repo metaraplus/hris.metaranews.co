@@ -77,6 +77,33 @@
         "createdAt": { "type": "string", "description": "Waktu ditambahkan" }
       },
       "required": ["uid", "email", "role"]
+    },
+    "LeaveRequest": {
+      "title": "LeaveRequest",
+      "description": "Pengajuan permohonan izin, sakit, dan cuti tahunan karyawan",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string", "description": "ID dokumen karyawan", "maxLength": 128 },
+        "userId": { "type": "string", "description": "Auth UID karyawan", "maxLength": 128 },
+        "employeeName": { "type": "string", "description": "Nama karyawan", "maxLength": 100 },
+        "employeeNumber": { "type": "string", "description": "Nomor induk karyawan", "maxLength": 50 },
+        "department": { "type": "string", "description": "Departemen karyawan", "maxLength": 100 },
+        "type": { "type": "string", "description": "Jenis permohonan (sakit, cuti tahunan, izin)", "enum": ["sick", "annual", "permit"] },
+        "startDate": { "type": "string", "description": "Tanggal mulai YYYY-MM-DD", "maxLength": 20 },
+        "endDate": { "type": "string", "description": "Tanggal berakhir YYYY-MM-DD", "maxLength": 20 },
+        "durationDays": { "type": "number", "description": "Durasi hari cuti/izin" },
+        "reason": { "type": "string", "description": "Alasan pengajuan permohonan", "maxLength": 1000 },
+        "attachmentUrl": { "type": "string", "description": "Foto atau lampiran surat dokter/dokumen" },
+        "attachmentName": { "type": "string", "description": "Nama file lampiran", "maxLength": 150 },
+        "status": { "type": "string", "description": "Status pengajuan", "enum": ["pending", "approved", "rejected"] },
+        "reviewedBy": { "type": "string", "description": "Nama admin yang menyetujui/menolak", "maxLength": 100 },
+        "reviewedByUid": { "type": "string", "description": "UID admin reviewer", "maxLength": 128 },
+        "reviewedAt": { "type": "string", "description": "Waktu review" },
+        "reviewNotes": { "type": "string", "description": "Catatan review dari HR", "maxLength": 500 },
+        "createdAt": { "type": "string", "description": "Waktu pengajuan" },
+        "updatedAt": { "type": "string", "description": "Waktu pembaruan" }
+      },
+      "required": ["employeeId", "userId", "employeeName", "type", "startDate", "endDate", "durationDays", "reason", "status"]
     }
   },
   "firestore": {
@@ -95,6 +122,10 @@
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/Admin" },
       "description": "Koleksi otorisasi administrator HR"
+    },
+    "/leaves/{leaveId}": {
+      "schema": { "$ref": "#/entities/LeaveRequest" },
+      "description": "Koleksi pengajuan izin, sakit, dan cuti tahunan"
     }
   }
 }

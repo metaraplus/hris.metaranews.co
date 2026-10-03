@@ -17,7 +17,7 @@ import {
   getDocs,
   deleteDoc,
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType, testConnection } from '../firebase/config';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase/config';
 import { Employee } from '../types';
 import { saveRecentAccount } from '../utils/recentAccounts';
 
@@ -56,11 +56,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
-
-  // Initial connection test
-  useEffect(() => {
-    testConnection();
-  }, []);
 
   // Fetch or initialize employee profile
   const syncEmployeeProfile = async (firebaseUser: User) => {

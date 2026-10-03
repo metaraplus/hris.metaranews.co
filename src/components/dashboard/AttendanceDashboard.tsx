@@ -15,16 +15,25 @@ import {
   UserCheck,
   Building2,
   RefreshCw,
+  Stethoscope,
+  Palmtree,
+  FileCheck2,
+  ChevronRight,
 } from 'lucide-react';
-import { AttendanceRecord, Employee } from '../../types';
+import { AttendanceRecord, Employee, LeaveRequest } from '../../types';
 import { exportAttendancesToExcel } from '../../utils/excelExport';
 import { db, handleFirestoreError, OperationType } from '../../firebase/config';
 import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 
-export const AttendanceDashboard: React.FC = () => {
+interface AttendanceDashboardProps {
+  onNavigateToLeaves?: () => void;
+}
+
+export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavigateToLeaves }) => {
   const { user, isAdmin } = useAuth();
   const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -73,6 +82,31 @@ export const AttendanceDashboard: React.FC = () => {
     return () => unsubscribe();
   }, [user, isAdmin]);
 
+  // Real-time Firestore sync for leaves
+  useEffect(() => {
+    if (!user) return;
+    const leavesCol = collection(db, 'leaves');
+    const q = isAdmin
+      ? query(leavesCol, limit(200))
+      : query(leavesCol, where('userId', '==', user.uid), limit(100));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const records: LeaveRequest[] = [];
+        snapshot.forEach((docSnap) => {
+          records.push({ ...(docSnap.data() as LeaveRequest), id: docSnap.id });
+        });
+        setLeaves(records);
+      },
+      (error) => {
+        console.warn('Leaves sync note:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, isAdmin]);
+
   // Compute Today, Week, Month boundaries
   const todayStr = useMemo(() => {
     const now = new Date();
@@ -113,6 +147,7 @@ export const AttendanceDashboard: React.FC = () => {
         if (selectedStatus === 'late' && att.checkInStatus !== 'late') return false;
         if (selectedStatus === 'out_of_range' && att.checkInStatus !== 'out_of_range') return false;
         if (selectedStatus === 'checkout' && !att.checkOutTime) return false;
+        if (selectedStatus === 'leave' && !['sick', 'annual_leave', 'permit'].includes(att.status)) return false;
       }
 
       // Search Query
@@ -136,6 +171,16 @@ export const AttendanceDashboard: React.FC = () => {
     });
     return Array.from(set);
   }, [attendances]);
+
+  // Pending leaves awaiting HR approval
+  const pendingLeaves = useMemo(() => {
+    return leaves.filter((l) => l.status === 'pending');
+  }, [leaves]);
+
+  // Approved leaves count
+  const approvedLeavesCount = useMemo(() => {
+    return filteredAttendances.filter((a) => ['sick', 'annual_leave', 'permit'].includes(a.status)).length;
+  }, [filteredAttendances]);
 
   // KPIs
   const totalFiltered = filteredAttendances.length;
@@ -195,12 +240,40 @@ export const AttendanceDashboard: React.FC = () => {
         </button>
       </div>
 
+      {/* Alert banner for pending leave requests */}
+      {pendingLeaves.length > 0 && isAdmin && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+              <FileCheck2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-bold text-sm text-slate-900">
+                Terdapat {pendingLeaves.length} Pengajuan Izin / Cuti Menunggu Persetujuan HR
+              </div>
+              <p className="text-xs text-slate-600">
+                Karyawan telah mengajukan permohonan baru yang membutuhkan verifikasi atau tindakan persetujuan.
+              </p>
+            </div>
+          </div>
+          {onNavigateToLeaves && (
+            <button
+              onClick={onNavigateToLeaves}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-colors shrink-0 cursor-pointer"
+            >
+              <span>Kelola & Tinjau Permohonan</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-5 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
         {/* Total Presensi */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Total Presensi</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">Total Rekap</span>
             <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
               <UserCheck className="w-4 h-4" />
             </div>
@@ -210,7 +283,7 @@ export const AttendanceDashboard: React.FC = () => {
         </div>
 
         {/* Tepat Waktu % */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-slate-500 uppercase">Tepat Waktu</span>
             <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
@@ -222,7 +295,7 @@ export const AttendanceDashboard: React.FC = () => {
         </div>
 
         {/* Terlambat */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-slate-500 uppercase">Terlambat</span>
             <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
@@ -234,27 +307,39 @@ export const AttendanceDashboard: React.FC = () => {
         </div>
 
         {/* Luar Geofence */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Luar Radius GPS</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">Luar Radius</span>
             <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
               <MapPin className="w-4 h-4" />
             </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-rose-600">{outOfRangeCount}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Melewati radius geofence</p>
+          <p className="text-[11px] text-slate-400 mt-1">Melewati geofence</p>
+        </div>
+
+        {/* Izin & Cuti Resmi */}
+        <div className="bg-white p-4 rounded-2xl border border-purple-200 shadow-xs bg-purple-50/20">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-purple-700 uppercase">Izin & Cuti</span>
+            <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">
+              <FileCheck2 className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-bold text-purple-700">{approvedLeavesCount}</div>
+          <p className="text-[11px] text-slate-400 mt-1">Sakit, cuti & izin resmi</p>
         </div>
 
         {/* Skor Wajah Rata-rata */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs col-span-2 lg:col-span-1">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Skor Biometrik</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">Biometrik</span>
             <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
               <UserCheck className="w-4 h-4" />
             </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-indigo-600">{avgFaceScore}%</div>
-          <p className="text-[11px] text-slate-400 mt-1">Rerata kecocokan wajah</p>
+          <p className="text-[11px] text-slate-400 mt-1">Rerata kecocokan</p>
         </div>
       </div>
 
@@ -345,6 +430,7 @@ export const AttendanceDashboard: React.FC = () => {
               <option value="late">Terlambat</option>
               <option value="out_of_range">Luar Radius GPS</option>
               <option value="checkout">Sudah Clock-Out</option>
+              <option value="leave">🩺 Sakit / Cuti / Izin</option>
             </select>
           </div>
         </div>
@@ -421,42 +507,73 @@ export const AttendanceDashboard: React.FC = () => {
 
                       {/* Tanggal & Jam Masuk */}
                       <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-800 font-mono">
-                          {att.checkInTime || '-'} WIB
-                        </div>
-                        <div className="text-xs text-slate-400">{att.date}</div>
+                        {['sick', 'annual_leave', 'permit'].includes(att.status) ? (
+                          <div>
+                            <div className="font-semibold text-purple-700 text-xs">
+                              {att.status === 'sick'
+                                ? 'Izin Sakit'
+                                : att.status === 'annual_leave'
+                                ? 'Cuti Tahunan'
+                                : 'Izin Khusus'}
+                            </div>
+                            <div className="text-xs text-slate-400">{att.date}</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="font-semibold text-slate-800 font-mono">
+                              {att.checkInTime || '-'} WIB
+                            </div>
+                            <div className="text-xs text-slate-400">{att.date}</div>
+                          </div>
+                        )}
                       </td>
 
                       {/* Face verification match */}
                       <td className="py-3 px-4">
-                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-700 font-mono">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>{att.checkInFaceMatchScore || 94}%</span>
-                        </div>
+                        {['sick', 'annual_leave', 'permit'].includes(att.status) ? (
+                          <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                            Izin Resmi
+                          </span>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-700 font-mono">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{att.checkInFaceMatchScore || 94}%</span>
+                          </div>
+                        )}
                       </td>
 
                       {/* GPS distance */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-1 text-xs font-semibold text-slate-700">
-                          <MapPin
-                            className={`w-3.5 h-3.5 ${
-                              hasOutOfRange ? 'text-rose-500' : 'text-emerald-600'
-                            }`}
-                          />
-                          <span>
-                            {att.checkInLocation?.distanceMeters !== undefined
-                              ? `${att.checkInLocation.distanceMeters} m`
-                              : '-'}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate max-w-[120px]">
-                          {att.checkInLocation?.address || 'Kantor'}
-                        </div>
+                        {['sick', 'annual_leave', 'permit'].includes(att.status) ? (
+                          <div className="text-xs text-slate-400 italic">Disetujui HR</div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1 text-xs font-semibold text-slate-700">
+                              <MapPin
+                                className={`w-3.5 h-3.5 ${
+                                  hasOutOfRange ? 'text-rose-500' : 'text-emerald-600'
+                                }`}
+                              />
+                              <span>
+                                {att.checkInLocation?.distanceMeters !== undefined
+                                  ? `${att.checkInLocation.distanceMeters} m`
+                                  : '-'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 truncate max-w-[120px]">
+                              {att.checkInLocation?.address || 'Kantor'}
+                            </div>
+                          </>
+                        )}
                       </td>
 
                       {/* Jam Pulang */}
                       <td className="py-3 px-4">
-                        {att.checkOutTime ? (
+                        {['sick', 'annual_leave', 'permit'].includes(att.status) ? (
+                          <span className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                            Bebas Tugas
+                          </span>
+                        ) : att.checkOutTime ? (
                           <div>
                             <div className="font-semibold text-slate-800 font-mono">
                               {att.checkOutTime} WIB
@@ -474,23 +591,45 @@ export const AttendanceDashboard: React.FC = () => {
 
                       {/* Status Masuk */}
                       <td className="py-3 px-4">
-                        {isOnTime && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Tepat Waktu</span>
-                          </span>
-                        )}
-                        {isLate && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Terlambat</span>
-                          </span>
-                        )}
-                        {hasOutOfRange && (
+                        {att.status === 'sick' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            <span>Luar Radius</span>
+                            <Stethoscope className="w-3.5 h-3.5" />
+                            <span>Sakit</span>
                           </span>
+                        )}
+                        {att.status === 'annual_leave' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                            <Palmtree className="w-3.5 h-3.5" />
+                            <span>Cuti Tahunan</span>
+                          </span>
+                        )}
+                        {att.status === 'permit' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                            <FileCheck2 className="w-3.5 h-3.5" />
+                            <span>Izin Khusus</span>
+                          </span>
+                        )}
+                        {!['sick', 'annual_leave', 'permit'].includes(att.status) && (
+                          <>
+                            {isOnTime && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Tepat Waktu</span>
+                              </span>
+                            )}
+                            {isLate && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Terlambat</span>
+                              </span>
+                            )}
+                            {hasOutOfRange && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <span>Luar Radius</span>
+                              </span>
+                            )}
+                          </>
                         )}
                       </td>
 
@@ -540,6 +679,21 @@ export const AttendanceDashboard: React.FC = () => {
 
             {/* Body */}
             <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+              {/* Leave Status Banner if record is approved leave */}
+              {['sick', 'annual_leave', 'permit'].includes(selectedRecord.status) && (
+                <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-xs text-purple-900 shadow-2xs">
+                  <div className="flex items-center gap-2 font-bold text-sm mb-1 text-purple-900">
+                    <FileCheck2 className="w-4 h-4 text-purple-600" />
+                    <span>
+                      Status: {selectedRecord.status === 'sick' ? 'Izin Sakit' : selectedRecord.status === 'annual_leave' ? 'Cuti Tahunan' : 'Izin Khusus'} Resmi Disetujui HR
+                    </span>
+                  </div>
+                  <p className="text-purple-800 leading-relaxed">
+                    {selectedRecord.notes || 'Pengajuan izin telah diverifikasi dan disetujui oleh Manajemen HR.'}
+                  </p>
+                </div>
+              )}
+
               {/* Photo Evidence Side by Side */}
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">

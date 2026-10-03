@@ -144,27 +144,52 @@ export const PersonalHistory: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-900 text-sm">{r.date}</span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          r.checkInStatus === 'on_time'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {r.checkInStatus === 'on_time' ? 'Tepat Waktu' : 'Terlambat'}
-                      </span>
+                      {r.status === 'sick' && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
+                          Sakit
+                        </span>
+                      )}
+                      {r.status === 'annual_leave' && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                          Cuti Tahunan
+                        </span>
+                      )}
+                      {r.status === 'permit' && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
+                          Izin Khusus
+                        </span>
+                      )}
+                      {!['sick', 'annual_leave', 'permit'].includes(r.status) && (
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            r.checkInStatus === 'on_time'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {r.checkInStatus === 'on_time' ? 'Tepat Waktu' : 'Terlambat'}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">
-                      <span className="flex items-center gap-1 font-mono text-slate-700">
-                        <Clock className="w-3.5 h-3.5 text-blue-500" />
-                        Masuk: {r.checkInTime || '-'} WIB
-                      </span>
-                      {r.checkOutTime && (
-                        <span className="flex items-center gap-1 font-mono text-slate-700">
-                          <Clock className="w-3.5 h-3.5 text-rose-500" />
-                          Pulang: {r.checkOutTime} WIB ({r.workHours} jam)
+                      {['sick', 'annual_leave', 'permit'].includes(r.status) ? (
+                        <span className="text-purple-700 font-medium">
+                          {r.notes || 'Izin/Cuti Resmi Disetujui HR'}
                         </span>
+                      ) : (
+                        <>
+                          <span className="flex items-center gap-1 font-mono text-slate-700">
+                            <Clock className="w-3.5 h-3.5 text-blue-500" />
+                            Masuk: {r.checkInTime || '-'} WIB
+                          </span>
+                          {r.checkOutTime && (
+                            <span className="flex items-center gap-1 font-mono text-slate-700">
+                              <Clock className="w-3.5 h-3.5 text-rose-500" />
+                              Pulang: {r.checkOutTime} WIB ({r.workHours} jam)
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

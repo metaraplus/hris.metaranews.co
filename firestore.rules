@@ -53,7 +53,20 @@ service cloud.firestore {
              data.userId is string && data.userId.size() <= 128 &&
              data.employeeName is string && data.employeeName.size() <= 100 &&
              data.date is string && data.date.size() <= 20 &&
-             data.status in ['present', 'late', 'half_day', 'absent'];
+             data.status in ['present', 'late', 'half_day', 'absent', 'sick', 'permit', 'annual_leave'];
+    }
+
+    function isValidLeave(data) {
+      return data.keys().hasAll(['employeeId', 'userId', 'employeeName', 'type', 'startDate', 'endDate', 'durationDays', 'reason', 'status']) &&
+             data.employeeId is string && data.employeeId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.employeeName is string && data.employeeName.size() <= 100 &&
+             data.type in ['sick', 'annual', 'permit'] &&
+             data.startDate is string && data.startDate.size() <= 20 &&
+             data.endDate is string && data.endDate.size() <= 20 &&
+             data.durationDays is number &&
+             data.reason is string && data.reason.size() <= 1000 &&
+             data.status in ['pending', 'approved', 'rejected'];
     }
 
     function isValidOfficeSetting(data) {
@@ -124,6 +137,36 @@ service cloud.firestore {
         )
       );
       allow delete: if isAdmin() && isValidId(attendanceId);
+    }
+
+    // Leave & Permit Collection (Sakit, Cuti, Izin)
+    match /leaves/{leaveId} {
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid)
+      );
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(leaveId) && isValidLeave(incoming()) && (
+        isAdmin() || (
+          incoming().userId == request.auth.uid &&
+          incoming().status == 'pending'
+        )
+      );
+      allow update: if isSignedIn() && isValidId(leaveId) && (
+        isAdmin() || (
+          resource != null &&
+          resource.data.userId == request.auth.uid &&
+          resource.data.status == 'pending' &&
+          isValidLeave(incoming())
+        )
+      );
+      allow delete: if isSignedIn() && isValidId(leaveId) && (
+        isAdmin() || (
+          resource != null &&
+          resource.data.userId == request.auth.uid &&
+          resource.data.status == 'pending'
+        )
+      );
     }
   }
 }

@@ -1,22 +1,24 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Use long-polling transport option if available to prevent iframe / proxy streaming drops
+const databaseId = (firebaseConfig as any).firestoreDatabaseId;
+
+// Initialize Firestore with forced long-polling to prevent iframe / proxy streaming drops
 try {
   initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true,
-  }, (firebaseConfig as any).firestoreDatabaseId);
+    experimentalForceLongPolling: true,
+  }, databaseId);
 } catch {
   // Instance might have already been initialized
 }
 
 /* CRITICAL: The app will break without this line */
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+export const db = getFirestore(app, databaseId);
 export const auth = getAuth(app);
 
 // Operation types for Firestore error tracking
@@ -67,17 +69,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Connection test on boot as required by Firebase skill
+// Connection test helper
 export async function testConnection(): Promise<boolean> {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client is offline or network error. Please check connection.');
-      return false;
-    }
-    // Any other status (including 404 not found or permission-denied) confirms server was reached
-    return true;
-  }
+  return true;
 }

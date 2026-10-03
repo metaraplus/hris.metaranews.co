@@ -11,18 +11,21 @@ import {
   ShieldCheck,
   UserCheck,
   CalendarDays,
+  FileCheck2,
 } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'clock' | 'dashboard' | 'history' | 'employees' | 'settings';
-  setActiveTab: (tab: 'clock' | 'dashboard' | 'history' | 'employees' | 'settings') => void;
+  activeTab: 'clock' | 'dashboard' | 'history' | 'employees' | 'settings' | 'leaves';
+  setActiveTab: (tab: 'clock' | 'dashboard' | 'history' | 'employees' | 'settings' | 'leaves') => void;
   onOpenFaceRegistration?: () => void;
+  pendingLeaveCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   onOpenFaceRegistration,
+  pendingLeaveCount = 0,
 }) => {
   const { user, employee, isAdmin, signOutUser } = useAuth();
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -173,6 +176,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <CalendarDays className="w-4 h-4" />
             <span>Riwayat Saya</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('leaves')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all shrink-0 ${
+              activeTab === 'leaves'
+                ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <FileCheck2 className="w-4 h-4" />
+            <span>Izin & Cuti</span>
+            {pendingLeaveCount > 0 && (
+              <span
+                className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'leaves'
+                    ? 'bg-amber-300 text-slate-900'
+                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}
+              >
+                {pendingLeaveCount}
+              </span>
+            )}
           </button>
 
           <button

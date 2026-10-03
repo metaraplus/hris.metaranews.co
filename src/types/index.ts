@@ -57,8 +57,35 @@ export interface AttendanceRecord {
   checkOutPhoto?: string;
   checkOutFaceMatchScore?: number;
   workHours?: number;
-  status: 'present' | 'late' | 'half_day' | 'absent';
+  status: 'present' | 'late' | 'half_day' | 'absent' | 'sick' | 'permit' | 'annual_leave';
+  leaveId?: string;
   notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type LeaveType = 'sick' | 'annual' | 'permit';
+export type LeaveStatus = 'pending' | 'approved' | 'rejected';
+
+export interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  userId: string;
+  employeeName: string;
+  employeeNumber: string;
+  department: string;
+  type: LeaveType; // sick, annual, permit
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  durationDays: number;
+  reason: string;
+  attachmentUrl?: string; // Data URL or URL for doctor notes or letters
+  attachmentName?: string;
+  status: LeaveStatus; // pending, approved, rejected
+  reviewedBy?: string;
+  reviewedByUid?: string;
+  reviewedAt?: string;
+  reviewNotes?: string;
   createdAt: string;
   updatedAt?: string;
 }

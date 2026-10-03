@@ -10,19 +10,21 @@ import { LoginView } from './components/auth/LoginView';
 import { AttendanceClockIn } from './components/attendance/AttendanceClockIn';
 import { AttendanceDashboard } from './components/dashboard/AttendanceDashboard';
 import { PersonalHistory } from './components/attendance/PersonalHistory';
+import { LeaveManagement } from './components/leaves/LeaveManagement';
 import { EmployeeManagement } from './components/employees/EmployeeManagement';
 import { OfficeSettingsView } from './components/settings/OfficeSettingsModal';
 import { FaceRegistrationModal } from './components/attendance/FaceRegistrationModal';
 import { OfficeSetting, Employee } from './types';
 import { DEFAULT_OFFICE_SETTING } from './utils/geolocation';
 import { db, handleFirestoreError, OperationType } from './firebase/config';
-import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc, collection, query, where } from 'firebase/firestore';
 import { RefreshCw, ShieldCheck } from 'lucide-react';
 
 function MainApp() {
   const { user, employee, isAdmin, loading, refreshEmployee, updateEmployeeProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'clock' | 'dashboard' | 'history' | 'employees' | 'settings'>('clock');
+  const [activeTab, setActiveTab] = useState<'clock' | 'dashboard' | 'history' | 'employees' | 'settings' | 'leaves'>('clock');
   const [officeSetting, setOfficeSetting] = useState<OfficeSetting>(DEFAULT_OFFICE_SETTING);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState<number>(0);
 
   // Face Registration Modal state
   const [faceModalOpen, setFaceModalOpen] = useState(false);
@@ -50,6 +52,27 @@ function MainApp() {
       (error) => {
         // Fallback to default without breaking
         console.warn('Using default office setting due to:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, isAdmin]);
+
+  // Real-time listener for pending leave requests count
+  useEffect(() => {
+    if (!user) return;
+    const leavesCol = collection(db, 'leaves');
+    const q = isAdmin
+      ? query(leavesCol, where('status', '==', 'pending'))
+      : query(leavesCol, where('userId', '==', user.uid), where('status', '==', 'pending'));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setPendingLeaveCount(snapshot.size);
+      },
+      (error) => {
+        console.warn('Pending leaves counter error:', error);
       }
     );
 
@@ -156,6 +179,7 @@ function MainApp() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenFaceRegistration={handleOpenMyFaceRegistration}
+        pendingLeaveCount={pendingLeaveCount}
       />
 
       <main className="flex-1 pb-16">
@@ -169,7 +193,11 @@ function MainApp() {
 
         {activeTab === 'history' && <PersonalHistory />}
 
-        {activeTab === 'dashboard' && <AttendanceDashboard />}
+        {activeTab === 'leaves' && <LeaveManagement />}
+
+        {activeTab === 'dashboard' && (
+          <AttendanceDashboard onNavigateToLeaves={() => setActiveTab('leaves')} />
+        )}
 
         {activeTab === 'employees' && isAdmin && (
           <EmployeeManagement
