@@ -32,7 +32,10 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (request.auth.token.email.lower() == 'metaraplus.metaranews@gmail.com')
+        (request.auth.token.email.lower() == 'metaraplus.metaranews@gmail.com') ||
+        (request.auth.token.email.lower() == 'admin@metaranews.co') ||
+        (exists(/databases/$(database)/documents/employees/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
@@ -61,13 +64,13 @@ service cloud.firestore {
       return data.keys().hasAll(['employeeId', 'userId', 'employeeName', 'type', 'startDate', 'endDate', 'durationDays', 'reason', 'status']) &&
              data.employeeId is string && data.employeeId.size() <= 128 &&
              data.userId is string && data.userId.size() <= 128 &&
-             data.employeeName is string && data.employeeName.size() <= 100 &&
-             data.type in ['sick', 'annual', 'permit'] &&
-             data.startDate is string && data.startDate.size() <= 20 &&
-             data.endDate is string && data.endDate.size() <= 20 &&
+             data.employeeName is string && data.employeeName.size() <= 150 &&
+             data.type in ['sick', 'annual', 'permit', 'annual_leave', 'cuti', 'izin', 'sakit'] &&
+             data.startDate is string && data.startDate.size() <= 30 &&
+             data.endDate is string && data.endDate.size() <= 30 &&
              data.durationDays is number &&
-             data.reason is string && data.reason.size() <= 1000 &&
-             data.status in ['pending', 'approved', 'rejected'];
+             data.reason is string && data.reason.size() <= 3000 &&
+             data.status in ['pending', 'approved', 'rejected', 'PENDING', 'APPROVED', 'REJECTED'];
     }
 
     function isValidOfficeSetting(data) {
@@ -122,11 +125,7 @@ service cloud.firestore {
 
     // Attendance Collection
     match /attendances/{attendanceId} {
-      allow get: if isSignedIn() && (
-        isAdmin() ||
-        (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid)
-      );
-      allow list: if isSignedIn();
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(attendanceId) && isValidAttendance(incoming()) && (
         isAdmin() || (
           incoming().userId == request.auth.uid
@@ -142,11 +141,7 @@ service cloud.firestore {
 
     // Leave & Permit Collection (Sakit, Cuti, Izin)
     match /leaves/{leaveId} {
-      allow get: if isSignedIn() && (
-        isAdmin() ||
-        (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid)
-      );
-      allow list: if isSignedIn();
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(leaveId) && isValidLeave(incoming()) && (
         isAdmin() || (
           incoming().userId == request.auth.uid &&

@@ -49,7 +49,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ADMIN_EMAIL = 'metaraplus.metaranews@gmail.com';
+export const ADMIN_EMAILS = [
+  'metaraplus.metaranews@gmail.com',
+  'admin@metaranews.co',
+];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -63,7 +66,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const empRef = doc(db, 'employees', firebaseUser.uid);
       const empSnap = await getDoc(empRef);
 
-      const isDefaultAdmin = firebaseUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+      const userEmailLower = (firebaseUser.email || '').toLowerCase().trim();
+      let isDefaultAdmin = ADMIN_EMAILS.some((e) => e.toLowerCase() === userEmailLower);
+
+      // Check admins collection in Firestore as well
+      if (!isDefaultAdmin) {
+        try {
+          const adminDoc = await getDoc(doc(db, 'admins', firebaseUser.uid));
+          if (adminDoc.exists()) {
+            isDefaultAdmin = true;
+          }
+        } catch (e) {
+          console.warn('Admins collection check note:', e);
+        }
+      }
 
       // If admin, ensure admin doc exists for security rules
       if (isDefaultAdmin) {
@@ -112,6 +128,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (existingEmpData) {
         const userIsAdmin = isDefaultAdmin || existingEmpData.role === 'admin';
         setIsAdmin(userIsAdmin);
+
+        if (userIsAdmin) {
+          try {
+            await setDoc(doc(db, 'admins', firebaseUser.uid), {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              role: isDefaultAdmin ? 'superadmin' : 'admin',
+              updatedAt: new Date().toISOString(),
+            }, { merge: true });
+          } catch (e) {
+            console.warn('Admin record sync note:', e);
+          }
+        }
+
         const resolvedEmp: Employee = {
           ...existingEmpData,
           id: firebaseUser.uid,

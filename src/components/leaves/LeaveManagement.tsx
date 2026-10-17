@@ -21,9 +21,11 @@ import {
   Calendar,
   ChevronRight,
   ExternalLink,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { LeaveRequest, LeaveType, LeaveStatus, AttendanceRecord } from '../../types';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, ADMIN_EMAILS } from '../../context/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../../firebase/config';
 import {
   collection,
@@ -41,6 +43,16 @@ export const LeaveManagement: React.FC = () => {
   const { user, employee, isAdmin } = useAuth();
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Compute effective admin status to prevent race condition when mounting
+  const isEffectiveAdmin = useMemo(() => {
+    if (isAdmin) return true;
+    if (employee?.role === 'admin') return true;
+    if (user?.email && ADMIN_EMAILS.some((e) => e.toLowerCase() === user.email?.toLowerCase())) {
+      return true;
+    }
+    return false;
+  }, [isAdmin, employee, user]);
 
   // Filter States
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -77,6 +89,10 @@ export const LeaveManagement: React.FC = () => {
     setEndDate(today);
   }, []);
 
+  // Delete Leave Modal State
+  const [leaveToDelete, setLeaveToDelete] = useState<LeaveRequest | null>(null);
+  const [isDeletingLeave, setIsDeletingLeave] = useState(false);
+
   // Real-time synchronization with Firestore
   useEffect(() => {
     if (!user) return;
@@ -84,30 +100,81 @@ export const LeaveManagement: React.FC = () => {
 
     const leavesCol = collection(db, 'leaves');
     // Admin gets all leaves, employee gets their own leaves
-    const q = isAdmin
-      ? query(leavesCol, limit(200))
-      : query(leavesCol, where('userId', '==', user.uid), limit(100));
+    const q = isEffectiveAdmin
+      ? query(leavesCol)
+      : query(leavesCol, where('userId', '==', user.uid));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const list: LeaveRequest[] = [];
         snapshot.forEach((docSnap) => {
-          list.push({ ...(docSnap.data() as LeaveRequest), id: docSnap.id });
+          const raw = docSnap.data() as any;
+          // Normalization helper to guarantee no missing fields break UI
+          const rawType = (raw.type || 'permit').toString().toLowerCase();
+          const normalizedType: LeaveType =
+            rawType === 'sick' || rawType === 'sakit'
+              ? 'sick'
+              : rawType === 'annual' || rawType === 'annual_leave' || rawType === 'cuti'
+              ? 'annual'
+              : 'permit';
+
+          const rawStatus = (raw.status || 'pending').toString().toLowerCase();
+          const normalizedStatus: LeaveStatus =
+            rawStatus === 'approved'
+              ? 'approved'
+              : rawStatus === 'rejected'
+              ? 'rejected'
+              : 'pending';
+
+          const normalized: LeaveRequest = {
+            id: docSnap.id,
+            employeeId: raw.employeeId || raw.userId || docSnap.id,
+            userId: raw.userId || raw.employeeId || user.uid,
+            employeeName: raw.employeeName || raw.name || raw.userName || 'Karyawan',
+            employeeNumber: raw.employeeNumber || raw.nip || raw.empNumber || 'EMP-0001',
+            department: raw.department || raw.dept || 'Operasional',
+            type: normalizedType,
+            startDate: raw.startDate || raw.date || '',
+            endDate: raw.endDate || raw.startDate || raw.date || '',
+            durationDays:
+              typeof raw.durationDays === 'number' && !isNaN(raw.durationDays)
+                ? raw.durationDays
+                : Number(raw.durationDays) || 1,
+            reason: raw.reason || raw.notes || raw.keterangan || '-',
+            attachmentUrl: raw.attachmentUrl || raw.attachment || raw.fileUrl || undefined,
+            attachmentName: raw.attachmentName || raw.fileName || undefined,
+            status: normalizedStatus,
+            reviewedBy: raw.reviewedBy,
+            reviewedByUid: raw.reviewedByUid,
+            reviewedAt: raw.reviewedAt,
+            reviewNotes: raw.reviewNotes,
+            createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
+            updatedAt: raw.updatedAt || raw.updated_at,
+          };
+          list.push(normalized);
         });
-        // Sort newest first
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        // Sort newest first with robust NaN guard
+        list.sort((a, b) => {
+          const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          const validA = isNaN(tA) ? 0 : tA;
+          const validB = isNaN(tB) ? 0 : tB;
+          return validB - validA;
+        });
+
         setLeaves(list);
         setLoading(false);
       },
       (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'leaves');
+        console.warn('Leaves sync note:', error);
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
-  }, [user, isAdmin]);
+  }, [user, isEffectiveAdmin]);
 
   // Calculate duration in calendar days
   const calculatedDuration = useMemo(() => {
@@ -124,18 +191,59 @@ export const LeaveManagement: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      setFormError('Ukuran file maksimal 2 MB');
+    if (file.size > 5 * 1024 * 1024) {
+      setFormError('Ukuran file maksimal 5 MB');
       return;
     }
 
     setAttachmentFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAttachmentDataUrl(reader.result as string);
-      setFormError(null);
-    };
-    reader.readAsDataURL(file);
+
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new window.Image();
+        img.onload = () => {
+          const maxDim = 900;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            const compressed = canvas.toDataURL('image/jpeg', 0.75);
+            setAttachmentDataUrl(compressed);
+            setFormError(null);
+          } else {
+            setAttachmentDataUrl(event.target?.result as string);
+            setFormError(null);
+          }
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      if (file.size > 700 * 1024) {
+        setFormError('Untuk dokumen non-gambar (PDF), ukuran maksimal adalah 700 KB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAttachmentDataUrl(reader.result as string);
+        setFormError(null);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Submit Leave Request
@@ -163,13 +271,26 @@ export const LeaveManagement: React.FC = () => {
       const leaveId = `leave_${user.uid}_${Date.now()}`;
       const now = new Date().toISOString();
 
+      const empName =
+        (employee?.name && employee.name.trim()) ||
+        (user.displayName && user.displayName.trim()) ||
+        (user.email ? user.email.split('@')[0] : 'Karyawan');
+
+      const empNum =
+        (employee?.employeeNumber && employee.employeeNumber.trim()) ||
+        'EMP-0001';
+
+      const empDept =
+        (employee?.department && employee.department.trim()) ||
+        'Operasional';
+
       const newLeave: LeaveRequest = {
         id: leaveId,
         employeeId: employee?.id || user.uid,
         userId: user.uid,
-        employeeName: employee?.name || user.displayName || 'Karyawan',
-        employeeNumber: employee?.employeeNumber || 'EMP-0001',
-        department: employee?.department || 'Operasional',
+        employeeName: empName,
+        employeeNumber: empNum,
+        department: empDept,
         type: leaveType,
         startDate,
         endDate,
@@ -199,10 +320,10 @@ export const LeaveManagement: React.FC = () => {
       setAttachmentFileName('');
 
       setTimeout(() => setSubmitSuccess(null), 6000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error submitting leave:', err);
-      handleFirestoreError(err, OperationType.CREATE, 'leaves');
-      setFormError('Gagal mengajukan izin. Silakan coba kembali.');
+      const msg = err?.message || 'Gagal mengajukan izin. Silakan coba kembali.';
+      setFormError(`Gagal mengajukan izin: ${msg}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -292,13 +413,41 @@ export const LeaveManagement: React.FC = () => {
     }
   };
 
-  // Cancel pending request (for employees)
-  const handleCancelLeave = async (leaveId: string) => {
-    if (!window.confirm('Batalkan pengajuan izin ini?')) return;
+  // Delete or cancel leave request (Admin or Owner)
+  const handleDeleteLeave = async () => {
+    if (!leaveToDelete) return;
+    setIsDeletingLeave(true);
     try {
-      await deleteDoc(doc(db, 'leaves', leaveId));
+      // If the leave was approved, also clean up the attendance records generated for this leave
+      if (leaveToDelete.status === 'approved') {
+        const start = new Date(leaveToDelete.startDate);
+        const end = new Date(leaveToDelete.endDate);
+        const curDate = new Date(start);
+        while (curDate <= end) {
+          const dateStr = curDate.toISOString().split('T')[0];
+          const attDocId = `${leaveToDelete.userId}_${dateStr}`;
+          try {
+            await deleteDoc(doc(db, 'attendances', attDocId));
+          } catch (e) {
+            console.warn('Note deleting attendance for leave:', e);
+          }
+          curDate.setDate(curDate.getDate() + 1);
+        }
+      }
+
+      await deleteDoc(doc(db, 'leaves', leaveToDelete.id));
+      setSubmitSuccess(
+        isEffectiveAdmin
+          ? `Pengajuan izin/cuti "${leaveToDelete.employeeName}" (${leaveToDelete.startDate}) berhasil dihapus.`
+          : 'Pengajuan izin berhasil dibatalkan.'
+      );
+      setLeaveToDelete(null);
+      setTimeout(() => setSubmitSuccess(null), 5000);
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `leaves/${leaveId}`);
+      console.error('Delete leave error:', err);
+      handleFirestoreError(err, OperationType.DELETE, `leaves/${leaveToDelete.id}`);
+    } finally {
+      setIsDeletingLeave(false);
     }
   };
 
@@ -311,11 +460,11 @@ export const LeaveManagement: React.FC = () => {
       if (filterType !== 'ALL' && leave.type !== filterType) return false;
       // Search query
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchName = leave.employeeName.toLowerCase().includes(q);
-        const matchNip = leave.employeeNumber?.toLowerCase().includes(q);
-        const matchDept = leave.department?.toLowerCase().includes(q);
-        const matchReason = leave.reason?.toLowerCase().includes(q);
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = (leave.employeeName || '').toLowerCase().includes(q);
+        const matchNip = (leave.employeeNumber || '').toLowerCase().includes(q);
+        const matchDept = (leave.department || '').toLowerCase().includes(q);
+        const matchReason = (leave.reason || '').toLowerCase().includes(q);
         if (!matchName && !matchNip && !matchDept && !matchReason) return false;
       }
       return true;
@@ -350,14 +499,14 @@ export const LeaveManagement: React.FC = () => {
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
               Pengajuan & Pengelolaan Izin / Cuti
             </h1>
-            {isAdmin && pendingCount > 0 && (
+            {isEffectiveAdmin && pendingCount > 0 && (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
                 {pendingCount} Menunggu HR
               </span>
             )}
           </div>
           <p className="text-sm text-slate-500 mt-1">
-            {isAdmin
+            {isEffectiveAdmin
               ? 'Kelola, setujui, atau tolak permohonan izin sakit, cuti tahunan, dan izin khusus karyawan'
               : 'Ajukan permohonan sakit, cuti tahunan, atau izin keperluan dan pantau status persetujuan HR'}
           </p>
@@ -372,9 +521,18 @@ export const LeaveManagement: React.FC = () => {
         </button>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards (Interactive Filters) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+        {/* Total Pengajuan */}
+        <button
+          type="button"
+          onClick={() => setFilterStatus('ALL')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterStatus === 'ALL'
+              ? 'bg-blue-50/60 border-blue-400 ring-2 ring-blue-500/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+          }`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
               Total Pengajuan
@@ -382,9 +540,18 @@ export const LeaveManagement: React.FC = () => {
             <FileText className="w-4 h-4 text-slate-400" />
           </div>
           <div className="text-2xl font-bold text-slate-800 mt-1">{totalCount}</div>
-        </div>
+        </button>
 
-        <div className="bg-white p-4 rounded-2xl border border-amber-200 shadow-xs bg-amber-50/20">
+        {/* Menunggu Review */}
+        <button
+          type="button"
+          onClick={() => setFilterStatus('pending')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterStatus === 'pending'
+              ? 'bg-amber-100/70 border-amber-500 ring-2 ring-amber-500/25 shadow-xs'
+              : 'bg-white border-amber-200/80 hover:border-amber-300 shadow-xs bg-amber-50/20'
+          }`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">
               Menunggu Review
@@ -392,9 +559,18 @@ export const LeaveManagement: React.FC = () => {
             <Clock className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-2xl font-bold text-amber-700 mt-1">{pendingCount}</div>
-        </div>
+        </button>
 
-        <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-xs bg-emerald-50/20">
+        {/* Disetujui */}
+        <button
+          type="button"
+          onClick={() => setFilterStatus('approved')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterStatus === 'approved'
+              ? 'bg-emerald-100/70 border-emerald-500 ring-2 ring-emerald-500/25 shadow-xs'
+              : 'bg-white border-emerald-200/80 hover:border-emerald-300 shadow-xs bg-emerald-50/20'
+          }`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">
               Disetujui
@@ -402,9 +578,18 @@ export const LeaveManagement: React.FC = () => {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-bold text-emerald-700 mt-1">{approvedCount}</div>
-        </div>
+        </button>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+        {/* Ditolak */}
+        <button
+          type="button"
+          onClick={() => setFilterStatus('rejected')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            filterStatus === 'rejected'
+              ? 'bg-rose-100/70 border-rose-500 ring-2 ring-rose-500/25 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+          }`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
               Ditolak
@@ -412,7 +597,7 @@ export const LeaveManagement: React.FC = () => {
             <XCircle className="w-4 h-4 text-rose-500" />
           </div>
           <div className="text-2xl font-bold text-slate-800 mt-1">{rejectedCount}</div>
-        </div>
+        </button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -596,20 +781,22 @@ export const LeaveManagement: React.FC = () => {
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
                           {/* Admin Review Action Buttons */}
-                          {isAdmin && leave.status === 'pending' && (
+                          {isEffectiveAdmin && leave.status === 'pending' && (
                             <>
                               <button
                                 onClick={() => openReviewModal(leave, 'approved')}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-2xs transition-colors cursor-pointer"
+                                title="Setujui Izin / Cuti"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                 <span>Setujui</span>
                               </button>
                               <button
                                 onClick={() => openReviewModal(leave, 'rejected')}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-2xs transition-colors cursor-pointer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-2xs transition-colors cursor-pointer"
+                                title="Tolak Pengajuan"
                               >
                                 <XCircle className="w-3.5 h-3.5" />
                                 <span>Tolak</span>
@@ -617,21 +804,28 @@ export const LeaveManagement: React.FC = () => {
                             </>
                           )}
 
-                          {/* Employee can cancel their own pending request */}
-                          {isOwner && leave.status === 'pending' && (
+                          {/* Tombol Hapus Khusus Admin HR (Untuk Semua Status) */}
+                          {isEffectiveAdmin && (
                             <button
-                              onClick={() => handleCancelLeave(leave.id)}
-                              title="Batalkan Pengajuan"
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                              onClick={() => setLeaveToDelete(leave)}
+                              title="Hapus Pengajuan Izin/Cuti Ini"
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Hapus</span>
+                            </button>
+                          )}
+
+                          {/* Employee can cancel their own pending request */}
+                          {isOwner && leave.status === 'pending' && !isEffectiveAdmin && (
+                            <button
+                              onClick={() => setLeaveToDelete(leave)}
+                              title="Batalkan Pengajuan Saya"
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                               <span>Batalkan</span>
                             </button>
-                          )}
-
-                          {/* Finished review tag */}
-                          {leave.status !== 'pending' && (
-                            <span className="text-xs text-slate-400 italic">Selesai</span>
                           )}
                         </div>
                       </td>
@@ -1009,6 +1203,123 @@ export const LeaveManagement: React.FC = () => {
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 4: Delete / Cancel Leave Confirmation Modal */}
+      {leaveToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-rose-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">
+                    {isEffectiveAdmin ? 'Hapus Pengajuan Izin/Cuti' : 'Batalkan Pengajuan Izin'}
+                  </h3>
+                  <p className="text-xs text-rose-600 font-medium">
+                    {isEffectiveAdmin ? 'Tindakan Administrator HR' : 'Konfirmasi Pembatalan'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setLeaveToDelete(null)}
+                disabled={isDeletingLeave}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {isEffectiveAdmin
+                  ? 'Apakah Anda yakin ingin menghapus data pengajuan izin/cuti berikut?'
+                  : 'Apakah Anda yakin ingin membatalkan permohonan izin/cuti ini?'}
+              </p>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Nama Karyawan:</span>
+                  <span className="font-bold text-slate-800">{leaveToDelete.employeeName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">NIP / Dept:</span>
+                  <span className="font-mono text-slate-700">
+                    {leaveToDelete.employeeNumber || '-'} • {leaveToDelete.department}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Jenis Izin:</span>
+                  <span className="font-semibold text-slate-800 capitalize">
+                    {leaveToDelete.type === 'sick'
+                      ? 'Sakit'
+                      : leaveToDelete.type === 'annual'
+                      ? 'Cuti Tahunan'
+                      : 'Izin Khusus'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Periode:</span>
+                  <span className="font-semibold text-slate-800">
+                    {leaveToDelete.startDate} s/d {leaveToDelete.endDate} ({leaveToDelete.durationDays} Hari)
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Status Saat Ini:</span>
+                  <span className="font-bold uppercase text-slate-700">{leaveToDelete.status}</span>
+                </div>
+                {leaveToDelete.reason && (
+                  <div className="pt-1.5 text-slate-500 italic border-t border-slate-200/60 line-clamp-2">
+                    "{leaveToDelete.reason}"
+                  </div>
+                )}
+              </div>
+
+              {leaveToDelete.status === 'approved' && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-[11px] text-rose-900 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>
+                    Pengajuan ini sebelumnya telah disetujui. Menghapusnya juga akan menghapus log presensi izin yang otomatis dibuat pada rentang tanggal tersebut.
+                  </span>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isDeletingLeave}
+                  onClick={() => setLeaveToDelete(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Kembali
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingLeave}
+                  onClick={handleDeleteLeave}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs active:scale-98 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isDeletingLeave ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menghapus...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{isEffectiveAdmin ? 'Ya, Hapus Pengajuan' : 'Ya, Batalkan Izin'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

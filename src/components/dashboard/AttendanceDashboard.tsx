@@ -20,13 +20,14 @@ import {
   FileCheck2,
   ChevronRight,
   FileDown,
+  Trash2,
 } from 'lucide-react';
 import { AttendanceRecord, Employee, LeaveRequest } from '../../types';
 import { exportAttendancesToExcel } from '../../utils/excelExport';
 import { exportMonthlyAttendancePDF, calculateEmployeeWorkSummaries } from '../../utils/pdfExport';
 import { db, handleFirestoreError, OperationType } from '../../firebase/config';
-import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
-import { useAuth } from '../../context/AuthContext';
+import { collection, onSnapshot, query, where, doc, deleteDoc } from 'firebase/firestore';
+import { useAuth, ADMIN_EMAILS } from '../../context/AuthContext';
 
 interface AttendanceDashboardProps {
   onNavigateToLeaves?: () => void;
@@ -34,6 +35,16 @@ interface AttendanceDashboardProps {
 
 export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavigateToLeaves }) => {
   const { user, employee, isAdmin } = useAuth();
+
+  const isEffectiveAdmin = useMemo(() => {
+    if (isAdmin) return true;
+    if (employee?.role === 'admin') return true;
+    if (user?.email && ADMIN_EMAILS.some((e) => e.toLowerCase() === user.email?.toLowerCase())) {
+      return true;
+    }
+    return false;
+  }, [isAdmin, employee, user]);
+
   const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,23 +68,46 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
   });
   const [pdfDept, setPdfDept] = useState('ALL');
 
+  // Delete Record Modal State (Admin only)
+  const [recordToDelete, setRecordToDelete] = useState<AttendanceRecord | null>(null);
+  const [isDeletingRecord, setIsDeletingRecord] = useState(false);
+  const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+
+  const handleDeleteRecord = async () => {
+    if (!recordToDelete || !isEffectiveAdmin) return;
+    setIsDeletingRecord(true);
+    try {
+      await deleteDoc(doc(db, 'attendances', recordToDelete.id));
+      setActionSuccessMessage(
+        `Data presensi "${recordToDelete.employeeName}" pada tanggal ${recordToDelete.date} berhasil dihapus.`
+      );
+      setRecordToDelete(null);
+      setTimeout(() => setActionSuccessMessage(null), 5000);
+    } catch (err) {
+      console.error('Delete attendance error:', err);
+      handleFirestoreError(err, OperationType.DELETE, `attendances/${recordToDelete.id}`);
+    } finally {
+      setIsDeletingRecord(false);
+    }
+  };
+
   // Real-time Firestore sync
   useEffect(() => {
     if (!user) return;
 
     setLoading(true);
     const attCollection = collection(db, 'attendances');
-    // Formulate query securely: Admins can query all, regular employees query their own records
-    const q = isAdmin
-      ? query(attCollection, limit(200))
-      : query(attCollection, where('userId', '==', user.uid), limit(200));
+    // Admins can query all records, regular employees query their own records
+    const q = isEffectiveAdmin
+      ? query(attCollection)
+      : query(attCollection, where('userId', '==', user.uid));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const records: AttendanceRecord[] = [];
-        snapshot.forEach((doc) => {
-          records.push({ ...(doc.data() as AttendanceRecord), id: doc.id });
+        snapshot.forEach((docSnap) => {
+          records.push({ ...(docSnap.data() as AttendanceRecord), id: docSnap.id });
         });
         // Sort by date/checkInTimestamp descending
         records.sort((a, b) => {
@@ -91,32 +125,73 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
     );
 
     return () => unsubscribe();
-  }, [user, isAdmin]);
+  }, [user, isEffectiveAdmin]);
 
   // Real-time Firestore sync for leaves
   useEffect(() => {
     if (!user) return;
     const leavesCol = collection(db, 'leaves');
-    const q = isAdmin
-      ? query(leavesCol, limit(200))
-      : query(leavesCol, where('userId', '==', user.uid), limit(100));
+    const q = isEffectiveAdmin
+      ? query(leavesCol)
+      : query(leavesCol, where('userId', '==', user.uid));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const records: LeaveRequest[] = [];
         snapshot.forEach((docSnap) => {
-          records.push({ ...(docSnap.data() as LeaveRequest), id: docSnap.id });
+          const raw = docSnap.data() as any;
+          const rawType = (raw.type || 'permit').toString().toLowerCase();
+          const normalizedType =
+            rawType === 'sick' || rawType === 'sakit'
+              ? 'sick'
+              : rawType === 'annual' || rawType === 'annual_leave' || rawType === 'cuti'
+              ? 'annual'
+              : 'permit';
+
+          const rawStatus = (raw.status || 'pending').toString().toLowerCase();
+          const normalizedStatus =
+            rawStatus === 'approved'
+              ? 'approved'
+              : rawStatus === 'rejected'
+              ? 'rejected'
+              : 'pending';
+
+          records.push({
+            id: docSnap.id,
+            employeeId: raw.employeeId || raw.userId || docSnap.id,
+            userId: raw.userId || raw.employeeId || user.uid,
+            employeeName: raw.employeeName || raw.name || raw.userName || 'Karyawan',
+            employeeNumber: raw.employeeNumber || raw.nip || raw.empNumber || 'EMP-0001',
+            department: raw.department || raw.dept || 'Operasional',
+            type: normalizedType,
+            startDate: raw.startDate || raw.date || '',
+            endDate: raw.endDate || raw.startDate || raw.date || '',
+            durationDays:
+              typeof raw.durationDays === 'number' && !isNaN(raw.durationDays)
+                ? raw.durationDays
+                : Number(raw.durationDays) || 1,
+            reason: raw.reason || raw.notes || raw.keterangan || '-',
+            attachmentUrl: raw.attachmentUrl || raw.attachment || raw.fileUrl || undefined,
+            attachmentName: raw.attachmentName || raw.fileName || undefined,
+            status: normalizedStatus,
+            reviewedBy: raw.reviewedBy,
+            reviewedByUid: raw.reviewedByUid,
+            reviewedAt: raw.reviewedAt,
+            reviewNotes: raw.reviewNotes,
+            createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
+            updatedAt: raw.updatedAt || raw.updated_at,
+          });
         });
         setLeaves(records);
       },
       (error) => {
-        console.warn('Leaves sync note:', error);
+        console.warn('Leaves sync note in AttendanceDashboard:', error);
       }
     );
 
     return () => unsubscribe();
-  }, [user, isAdmin]);
+  }, [user, isEffectiveAdmin]);
 
   // Compute Today, Week, Month boundaries
   const todayStr = useMemo(() => {
@@ -212,6 +287,10 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
 
   // Export handler
   const handleExport = () => {
+    if (!isEffectiveAdmin) {
+      alert('Akses dibatasi: Hanya HR Administrator yang memiliki izin mengunduh rekap Excel.');
+      return;
+    }
     if (filteredAttendances.length === 0) {
       alert('Tidak ada data presensi untuk diekspor.');
       return;
@@ -241,6 +320,10 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
   }, [pdfWorkSummaries]);
 
   const handleDownloadPDF = () => {
+    if (!isEffectiveAdmin) {
+      alert('Akses dibatasi: Hanya HR Administrator yang memiliki izin mengunduh laporan PDF.');
+      return;
+    }
     if (pdfAttendances.length === 0) {
       alert('Tidak ada data presensi pada bulan dan departemen yang dipilih.');
       return;
@@ -270,58 +353,115 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
           </p>
         </div>
 
-        {/* Export Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Export to PDF CTA */}
-          <button
-            onClick={() => setIsPdfModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm shadow-md shadow-rose-600/20 active:scale-98 transition-all shrink-0 cursor-pointer"
-          >
-            <FileDown className="w-4 h-4" />
-            <span>Laporan PDF Bulanan</span>
-          </button>
+        {/* Export Action Buttons - Khusus Role HR Admin */}
+        {isEffectiveAdmin && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Export to PDF CTA */}
+            <button
+              onClick={() => setIsPdfModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm shadow-md shadow-rose-600/20 active:scale-98 transition-all shrink-0 cursor-pointer"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>Laporan PDF Bulanan</span>
+            </button>
 
-          {/* Export to Excel CTA */}
-          <button
-            onClick={handleExport}
-            disabled={isExporting || totalFiltered === 0}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-md shadow-emerald-600/20 active:scale-98 transition-all shrink-0 cursor-pointer disabled:opacity-50"
-          >
-            {isExporting ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <FileSpreadsheet className="w-4 h-4" />
-            )}
-            <span>Ekspor Excel (.xlsx)</span>
-          </button>
-        </div>
+            {/* Export to Excel CTA */}
+            <button
+              onClick={handleExport}
+              disabled={isExporting || totalFiltered === 0}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-md shadow-emerald-600/20 active:scale-98 transition-all shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              {isExporting ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-4 h-4" />
+              )}
+              <span>Ekspor Excel (.xlsx)</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Alert banner for pending leave requests */}
-      {pendingLeaves.length > 0 && isAdmin && (
-        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-xs animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
-              <FileCheck2 className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="font-bold text-sm text-slate-900">
-                Terdapat {pendingLeaves.length} Pengajuan Izin / Cuti Menunggu Persetujuan HR
-              </div>
-              <p className="text-xs text-slate-600">
-                Karyawan telah mengajukan permohonan baru yang membutuhkan verifikasi atau tindakan persetujuan.
-              </p>
-            </div>
+      {/* Action Success Notification Banner */}
+      {actionSuccessMessage && (
+        <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center justify-between shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span className="text-sm font-semibold">{actionSuccessMessage}</span>
           </div>
-          {onNavigateToLeaves && (
-            <button
-              onClick={onNavigateToLeaves}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-colors shrink-0 cursor-pointer"
-            >
-              <span>Kelola & Tinjau Permohonan</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
+          <button onClick={() => setActionSuccessMessage(null)} className="p-1 hover:text-emerald-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Alert banner for pending leave requests */}
+      {pendingLeaves.length > 0 && isEffectiveAdmin && (
+        <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 shadow-xs animate-in fade-in space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+                <FileCheck2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2 flex-wrap">
+                  <span>Terdapat {pendingLeaves.length} Pengajuan Izin / Cuti Menunggu Persetujuan HR</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                    Menunggu Tindakan
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Karyawan telah mengajukan permohonan baru yang membutuhkan verifikasi atau tindakan persetujuan HR.
+                </p>
+              </div>
+            </div>
+            {onNavigateToLeaves && (
+              <button
+                onClick={onNavigateToLeaves}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-colors shrink-0 cursor-pointer"
+              >
+                <span>Buka Tab Izin & Cuti</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Quick interactive preview list of pending requests */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+            {pendingLeaves.slice(0, 6).map((pl) => (
+              <div
+                key={pl.id}
+                className="bg-white/95 p-3 rounded-xl border border-amber-200 shadow-2xs text-xs flex flex-col justify-between space-y-1.5 hover:border-amber-300 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-bold text-slate-900 block truncate">{pl.employeeName}</span>
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      {pl.employeeNumber} • {pl.department}
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                      pl.type === 'sick'
+                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                        : pl.type === 'annual'
+                        ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                        : 'bg-purple-100 text-purple-800 border border-purple-200'
+                    }`}
+                  >
+                    {pl.type === 'sick' ? 'Sakit' : pl.type === 'annual' ? 'Cuti' : 'Izin'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-700">
+                  <span className="font-semibold text-slate-800">Tanggal:</span> {pl.startDate}{' '}
+                  {pl.startDate !== pl.endDate ? `s/d ${pl.endDate}` : ''} ({pl.durationDays} hari)
+                </div>
+                <div className="text-[11px] text-slate-600 italic line-clamp-1 bg-slate-50/80 px-2 py-1 rounded-md">
+                  "{pl.reason}"
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -705,15 +845,29 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
                         )}
                       </td>
 
-                      {/* Detail action */}
+                      {/* Detail & Delete Actions */}
                       <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => setSelectedRecord(att)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Detail</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setSelectedRecord(att)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                            title="Lihat Detail Presensi"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Detail</span>
+                          </button>
+
+                          {isEffectiveAdmin && (
+                            <button
+                              onClick={() => setRecordToDelete(att)}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                              title="Hapus Data Presensi Ini"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Hapus</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1039,8 +1193,8 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
         </div>
       )}
 
-      {/* Monthly PDF Export Modal */}
-      {isPdfModalOpen && (
+      {/* Monthly PDF Export Modal - Khusus Role HR Admin */}
+      {isPdfModalOpen && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100">
             {/* Header */}
@@ -1162,6 +1316,98 @@ export const AttendanceDashboard: React.FC<AttendanceDashboardProps> = ({ onNavi
                     <>
                       <FileDown className="w-3.5 h-3.5" />
                       <span>Unduh Laporan PDF</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Attendance Confirmation Modal (HR Admin only) */}
+      {recordToDelete && isEffectiveAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-rose-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">Hapus Catatan Presensi</h3>
+                  <p className="text-xs text-rose-600 font-medium">Tindakan Khusus HR Administrator</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRecordToDelete(null)}
+                disabled={isDeletingRecord}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin menghapus data presensi berikut dari database?
+              </p>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Nama Karyawan:</span>
+                  <span className="font-bold text-slate-800">{recordToDelete.employeeName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">NIP / Departemen:</span>
+                  <span className="font-mono text-slate-700">{recordToDelete.employeeNumber || '-'} • {recordToDelete.department}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Tanggal:</span>
+                  <span className="font-semibold text-slate-800">{recordToDelete.date}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Jam Masuk / Pulang:</span>
+                  <span className="font-semibold text-slate-800">
+                    {recordToDelete.checkInTime || '-'} s/d {recordToDelete.checkOutTime || 'Belum Pulang'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  Data yang dihapus tidak dapat dipulihkan kembali dan akan hilang dari rekapitulasi harian serta laporan bulanan.
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isDeletingRecord}
+                  onClick={() => setRecordToDelete(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingRecord}
+                  onClick={handleDeleteRecord}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs active:scale-98 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isDeletingRecord ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menghapus...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Ya, Hapus Data</span>
                     </>
                   )}
                 </button>

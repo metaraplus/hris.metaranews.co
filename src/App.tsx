@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth, ADMIN_EMAILS } from './context/AuthContext';
 import { Navbar } from './components/layout/Navbar';
 import { LoginView } from './components/auth/LoginView';
 import { AttendanceClockIn } from './components/attendance/AttendanceClockIn';
@@ -22,6 +22,12 @@ import { RefreshCw, ShieldCheck } from 'lucide-react';
 
 function MainApp() {
   const { user, employee, isAdmin, loading, refreshEmployee, updateEmployeeProfile } = useAuth();
+
+  const isEffectiveAdmin =
+    isAdmin ||
+    employee?.role === 'admin' ||
+    (user?.email ? ADMIN_EMAILS.some((e) => e.toLowerCase() === user.email?.toLowerCase()) : false);
+
   const [activeTab, setActiveTab] = useState<'clock' | 'dashboard' | 'history' | 'employees' | 'settings' | 'leaves'>('clock');
   const [officeSetting, setOfficeSetting] = useState<OfficeSetting>(DEFAULT_OFFICE_SETTING);
   const [pendingLeaveCount, setPendingLeaveCount] = useState<number>(0);
@@ -42,7 +48,7 @@ function MainApp() {
           setOfficeSetting(snapshot.data() as OfficeSetting);
         } else {
           // Initialize default office setting if not yet set (Admin only)
-          if (isAdmin) {
+          if (isEffectiveAdmin) {
             setDoc(settingRef, DEFAULT_OFFICE_SETTING).catch((e) =>
               console.warn('Initial office setting setup note:', e)
             );
@@ -56,13 +62,13 @@ function MainApp() {
     );
 
     return () => unsubscribe();
-  }, [user, isAdmin]);
+  }, [user, isEffectiveAdmin]);
 
   // Real-time listener for pending leave requests count
   useEffect(() => {
     if (!user) return;
     const leavesCol = collection(db, 'leaves');
-    const q = isAdmin
+    const q = isEffectiveAdmin
       ? query(leavesCol, where('status', '==', 'pending'))
       : query(leavesCol, where('userId', '==', user.uid), where('status', '==', 'pending'));
 
@@ -77,7 +83,7 @@ function MainApp() {
     );
 
     return () => unsubscribe();
-  }, [user, isAdmin]);
+  }, [user, isEffectiveAdmin]);
 
   const handleOpenMyFaceRegistration = () => {
     // If employee document is still syncing, create fallback employee so registration modal always opens
